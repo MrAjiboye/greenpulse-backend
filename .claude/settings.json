@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/Scripts/python create_sample_data.py)",
+      "Bash(PYTHONIOENCODING=utf-8 venv/Scripts/python create_sample_data.py)",
+      "Bash(venv/Scripts/python -c \":*)",
+      "Bash(venv/Scripts/pip install slowapi)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(python -m json.tool)",
+      "Read(//c/Users/ifeol/**)",
+      "Bash(curl -s http://localhost:8000/api/docs)",
+      "Bash(curl -s http://localhost:8000/api/v1/auth/forgot-password -X POST -H \"Content-Type: application/json\" -d \"{\"\"email\"\":\"\"test@nonexistent.com\"\"}\")",
+      "Bash(curl -s http://localhost:8000/api/openapi.json)",
+      "Bash(python -c \"import sys,json; routes=[r for r in json.load\\(sys.stdin\\)[''paths''] if ''auth'' in r]; print\\(''\\\\n''.join\\(routes\\)\\)\")",
+      "Bash(venv/Scripts/python -c \"from app.routers.auth import router; print\\(''OK''\\)\")",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(venv/Scripts/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000)",
+      "Bash(curl -s http://localhost:8000/api/v1/auth/forgot-password -X POST -H \"Content-Type: application/json\" -d \"{\"\"email\"\":\"\"nobody@test.com\"\"}\")",
+      "Bash(venv/Scripts/python -c \"from app.main import app; print\\(''OK''\\)\")",
+      "Bash(python -c \"import sys,json; routes=list\\(json.load\\(sys.stdin\\)[''paths''].keys\\(\\)\\); print\\(''\\\\n''.join\\(routes\\)\\)\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\ifeol\\greenpulse-dashboard\\src\\services"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import secrets; print\\(secrets.token_hex\\(32\\)\\)\")",
+      "Bash(venv/Scripts/pip show pydantic-settings)",
+      "Bash(venv/Scripts/alembic init migrations)",
+      "Bash(venv/Scripts/alembic revision --autogenerate -m \"initial schema\")",
+      "Bash(venv/Scripts/python -c \"from app.main import app; print\\(''App loaded OK''\\)\")",
+      "Bash(netstat -ano)",
+      "Bash(venv/Scripts/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000)",
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(venv/Scripts/python -c \":*)"
+    ]
+  }
+}

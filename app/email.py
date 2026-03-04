@@ -1,0 +1,123 @@
+"""
+Email sending utilities — uses the Resend SDK.
+RESEND_API_KEY must be set in .env.
+Raises RuntimeError if the key is missing.
+"""
+
+import logging
+import resend
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+def send_email(to_email: str, subject: str, html_body: str, plain_body: str = "") -> None:
+    """Send an email via Resend. Raises RuntimeError if API key is not configured."""
+    if not settings.RESEND_API_KEY:
+        raise RuntimeError(
+            "Resend is not configured. Set RESEND_API_KEY in .env"
+        )
+
+    resend.api_key = settings.RESEND_API_KEY
+
+    params: resend.Emails.SendParams = {
+        "from": f"{settings.FROM_NAME} <{settings.FROM_EMAIL}>",
+        "to": [to_email],
+        "subject": subject,
+        "html": html_body,
+    }
+    if plain_body:
+        params["text"] = plain_body
+
+    resend.Emails.send(params)
+    logger.info("Email sent to %s — %s", to_email, subject)
+
+
+def send_verification_email(to_email: str, token: str, first_name: str) -> None:
+    """Send the account verification email with a signed token link."""
+    verify_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+
+    subject = "Verify your GreenPulse account"
+
+    html_body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#059669,#10b981);padding:32px 40px;text-align:center;">
+              <span style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">🌿 GreenPulse</span>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px 40px 32px;">
+              <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#111827;">
+                Hi {first_name}, please verify your email
+              </h1>
+              <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+                Thanks for signing up! Click the button below to confirm your email address
+                and get access to your GreenPulse dashboard.
+              </p>
+
+              <!-- CTA button -->
+              <table cellpadding="0" cellspacing="0" style="margin:0 0 32px;">
+                <tr>
+                  <td style="background:#059669;border-radius:8px;text-align:center;">
+                    <a href="{verify_url}"
+                       style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.2px;">
+                      Verify my email
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 8px;font-size:13px;color:#9ca3af;">
+                This link expires in <strong>24 hours</strong>. If you didn't create an account,
+                you can safely ignore this email.
+              </p>
+              <p style="margin:0;font-size:13px;color:#9ca3af;word-break:break-all;">
+                Or copy this URL into your browser:<br>
+                <a href="{verify_url}" style="color:#059669;">{verify_url}</a>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#9ca3af;">
+                © 2026 GreenPulse Inc. · Sustainability analytics for hospitality businesses
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+    plain_body = (
+        f"Hi {first_name},\n\n"
+        "Please verify your GreenPulse account by opening the link below:\n\n"
+        f"{verify_url}\n\n"
+        "This link expires in 24 hours.\n\n"
+        "If you didn't create an account, you can ignore this email.\n\n"
+        "— The GreenPulse Team"
+    )
+
+    send_email(to_email, subject, html_body, plain_body)
