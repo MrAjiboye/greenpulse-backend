@@ -3,11 +3,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.config import settings
 
-IS_SQLITE = "sqlite" in settings.DATABASE_URL
+_db_url = settings.DATABASE_URL
+# Railway gives postgres:// — SQLAlchemy requires postgresql://
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+
+IS_SQLITE = "sqlite" in _db_url
 
 # Create database engine
 engine = create_engine(
-    settings.DATABASE_URL,
+    _db_url,
     connect_args={"check_same_thread": False} if IS_SQLITE else {}
 )
 
