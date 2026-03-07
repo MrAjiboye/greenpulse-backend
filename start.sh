@@ -12,7 +12,26 @@ echo "Starting GreenPulse backend..."
 python -c "
 from app.database import engine
 from app.models import Base
+import sqlalchemy as sa
+
 Base.metadata.create_all(engine)
+
+# Idempotently add any columns that may have been missing from earlier deployments
+with engine.connect() as conn:
+    # email_verified (added after initial schema)
+    row = conn.execute(sa.text(
+        \"SELECT column_name FROM information_schema.columns \"
+        \"WHERE table_name='users' AND column_name='email_verified'\"
+    )).fetchone()
+    if not row:
+        conn.execute(sa.text(
+            'ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE'
+        ))
+        conn.commit()
+        print('Added missing email_verified column.')
+    else:
+        print('email_verified column OK.')
+
 print('Database tables created/verified.')
 "
 
