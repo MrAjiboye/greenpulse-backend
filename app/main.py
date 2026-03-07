@@ -122,6 +122,14 @@ app.include_router(ingest.router,     prefix=API_V1)
 
 # ── ML scheduler (auto-retraining) ────────────────────────────────────────────
 @app.on_event("startup")
+async def log_config():
+    logger.info("GOOGLE_CLIENT_ID set: %s", bool(settings.GOOGLE_CLIENT_ID))
+    logger.info("RESEND_API_KEY set:   %s", bool(settings.RESEND_API_KEY))
+    logger.info("FRONTEND_URL:         %s", settings.FRONTEND_URL)
+    logger.info("ALLOWED_ORIGINS:      %s", settings.ALLOWED_ORIGINS)
+
+
+@app.on_event("startup")
 async def start_ml_scheduler():
     from app.ml.scheduler import start_scheduler
     start_scheduler()
