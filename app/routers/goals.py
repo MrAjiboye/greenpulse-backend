@@ -95,7 +95,7 @@ def list_goals(
 def create_goal(
     body: GoalCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(ManagerOrAdmin),
+    current_user: User = ManagerOrAdmin,
 ):
     if current_user.organization_id is None and current_user.role != UserRole.ADMIN:
         raise HTTPException(400, "You must belong to an organisation to create goals.")
@@ -127,7 +127,7 @@ def update_goal(
     goal_id: int,
     body: GoalUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(ManagerOrAdmin),
+    current_user: User = ManagerOrAdmin,
 ):
     goal = _org_q(db.query(Goal).filter(Goal.id == goal_id), current_user, Goal).first()
     if not goal:
@@ -150,7 +150,7 @@ def update_goal(
 def delete_goal(
     goal_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(ManagerOrAdmin),
+    current_user: User = ManagerOrAdmin,
 ):
     goal = _org_q(db.query(Goal).filter(Goal.id == goal_id), current_user, Goal).first()
     if not goal:
