@@ -18,19 +18,20 @@ Base.metadata.create_all(engine)
 
 # Idempotently add any columns that may have been missing from earlier deployments
 with engine.connect() as conn:
-    # email_verified (added after initial schema)
-    row = conn.execute(sa.text(
-        \"SELECT column_name FROM information_schema.columns \"
-        \"WHERE table_name='users' AND column_name='email_verified'\"
-    )).fetchone()
-    if not row:
-        conn.execute(sa.text(
-            'ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE'
-        ))
-        conn.commit()
-        print('Added missing email_verified column.')
-    else:
-        print('email_verified column OK.')
+    # Idempotently add all columns that may be missing from earlier deployments.
+    # ADD COLUMN IF NOT EXISTS is a no-op when the column already exists (PostgreSQL 9.6+).
+    missing_col_stmts = [
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE',
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title TEXT',
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS department TEXT',
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name TEXT',
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_provider TEXT',
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_sub TEXT',
+    ]
+    for stmt in missing_col_stmts:
+        conn.execute(sa.text(stmt))
+    conn.commit()
+    print('User column migrations applied.')
 
     # goals table
     conn.execute(sa.text(\"\"\"
