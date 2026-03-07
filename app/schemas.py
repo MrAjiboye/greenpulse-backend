@@ -116,6 +116,7 @@ class EnergyReadingCreate(BaseModel):
     consumption_kwh: float
     zone: str
     facility_id: int = 1
+    organization_id: Optional[int] = None  # Admin override only
 
 class EnergyReadingResponse(BaseModel):
     id: int
@@ -134,6 +135,7 @@ class WasteLogCreate(BaseModel):
     weight_kg: float
     location: str
     contamination_detected: bool = False
+    organization_id: Optional[int] = None  # Admin override only
 
 class WasteLogResponse(BaseModel):
     id: int

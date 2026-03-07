@@ -92,7 +92,10 @@ def get_energy_trends(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Get energy consumption trends"""
+    """Get energy consumption trends.
+    Returns readings from the last `hours` window. If none exist in that window
+    (e.g. demo/historical data), falls back to the most recent 24 readings so
+    the chart always has something to show."""
     cutoff_time = naive_utc(datetime.now(timezone.utc) - timedelta(hours=hours))
 
     readings = _org_q(
@@ -100,6 +103,15 @@ def get_energy_trends(
         .order_by(EnergyReading.timestamp.asc()),
         current_user, EnergyReading
     ).all()
+
+    # Fallback: if no data in the requested window, return the most recent 24 readings
+    if not readings:
+        readings = list(reversed(
+            _org_q(
+                db.query(EnergyReading).order_by(EnergyReading.timestamp.desc()),
+                current_user, EnergyReading
+            ).limit(24).all()
+        ))
 
     return {
         "trends": [

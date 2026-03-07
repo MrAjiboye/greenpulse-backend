@@ -18,8 +18,9 @@ class Settings(BaseSettings):
     # CORS — comma-separated list of allowed origins
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
-    # AI
-    OPENAI_API_KEY: Optional[str] = None
+    # AI / LLM (optional — not currently used by the ML engine)
+    ANTHROPIC_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None  # kept for future use
 
     # ML Engine
     ML_AUTO_RETRAIN: bool = True

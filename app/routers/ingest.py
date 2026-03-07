@@ -53,12 +53,17 @@ def ingest_reading(
       - A meter integration script running on-site
       - Google Cloud Functions / Lambda piping data from a cloud bucket
     """
+    org_id = (
+        payload.organization_id
+        if current_user.role == UserRole.ADMIN and payload.organization_id
+        else current_user.organization_id
+    )
     reading = EnergyReading(
         timestamp=payload.timestamp,
         consumption_kwh=payload.consumption_kwh,
         zone=payload.zone,
         facility_id=payload.facility_id,
-        organization_id=current_user.organization_id,
+        organization_id=org_id,
     )
     db.add(reading)
     db.commit()
@@ -101,7 +106,11 @@ def ingest_batch(
             consumption_kwh=r.consumption_kwh,
             zone=r.zone,
             facility_id=r.facility_id,
-            organization_id=current_user.organization_id,
+            organization_id=(
+                r.organization_id
+                if current_user.role == UserRole.ADMIN and r.organization_id
+                else current_user.organization_id
+            ),
         )
         for r in payload.readings
     ]

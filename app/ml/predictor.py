@@ -19,6 +19,7 @@ from typing import List, Optional
 import numpy as np
 import pandas as pd
 
+from app.ml.llm import describe_night_usage, describe_peak_usage, describe_weekend_usage
 from app.ml.trainer import load_bundle
 
 logger = logging.getLogger("greenpulse.ml.predictor")
@@ -189,12 +190,15 @@ def forecast(horizon_hours: int = 168, last_readings=None) -> dict:
     }
 
 
-def auto_insights(db) -> dict:
+def auto_insights(db, organization_id: int | None = None) -> dict:
     """
     Analyse the last 7 days and auto-generate Insight + Notification records.
     Deduplication window is 24 hours -- the same insight can be re-created the
     next day if the condition persists.
     Stats are computed on IQR-capped cleaned data so outliers don't skew them.
+
+    Pass organization_id to scope the analysis and tag generated records to
+    that organisation. Without it, all readings are used and records have no org.
     """
     from app.models import (
         EnergyReading, Insight, InsightCategory, InsightStatus,
@@ -209,9 +213,12 @@ def auto_insights(db) -> dict:
     cutoff_7d  = naive_utc(datetime.now(timezone.utc) - timedelta(days=7))
     cutoff_24h = naive_utc(datetime.now(timezone.utc) - timedelta(hours=24))
 
-    readings = db.query(EnergyReading).filter(EnergyReading.timestamp >= cutoff_7d).all()
+    q = db.query(EnergyReading).filter(EnergyReading.timestamp >= cutoff_7d)
+    if organization_id is not None:
+        q = q.filter(EnergyReading.organization_id == organization_id)
+    readings = q.all()
     if not readings:
-        return {"created": 0, "skipped": "no recent readings"}
+        return {"created": 0, "skipped": "no recent readings for this organisation"}
 
     # ---- Use IQR-cleaned consumption values for all statistics ---------------
     kwh_raw = np.array([r.consumption_kwh for r in readings], dtype=float)
@@ -230,28 +237,32 @@ def auto_insights(db) -> dict:
     created = 0
 
     def _insight_exists(title: str) -> bool:
-        """Return True if this insight title was created within the last 24 h."""
-        return bool(
-            db.query(Insight)
-            .filter(Insight.title == title, Insight.created_at >= cutoff_24h)
-            .first()
-        )
+        """Return True if this insight title was created within the last 24 h for this org."""
+        q = db.query(Insight).filter(Insight.title == title, Insight.created_at >= cutoff_24h)
+        if organization_id is not None:
+            q = q.filter(Insight.organization_id == organization_id)
+        return bool(q.first())
+
+    # Only call the LLM for real registered organisations — not for demo/global runs
+    use_llm = organization_id is not None
 
     # ---- Insight 1: Peak usage warning --------------------------------------
     if peak_ratio > 2.0:
         title = "Unusually high peak consumption detected"
         if not _insight_exists(title):
+            description = (use_llm and describe_peak_usage(peak, avg, peak_ratio)) or (
+                f"Peak consumption ({peak:.1f} kWh) is {peak_ratio:.1f}x the 7-day average "
+                f"({avg:.1f} kWh). Investigate high-draw equipment during peak windows."
+            )
             db.add(Insight(
                 title=title,
-                description=(
-                    f"Peak consumption ({peak:.1f} kWh) is {peak_ratio:.1f}x the 7-day average "
-                    f"({avg:.1f} kWh). Investigate high-draw equipment during peak windows."
-                ),
+                description=description,
                 category=InsightCategory.ENERGY,
                 confidence_score=0.87,
                 estimated_savings=round((peak - avg) * 0.18 * 30, 2),
                 status=InsightStatus.PENDING,
                 facility_id=1,
+                organization_id=organization_id,
             ))
             created += 1
 
@@ -266,18 +277,20 @@ def auto_insights(db) -> dict:
         if night_avg > avg * 0.5:
             title = "High energy usage during off-hours"
             if not _insight_exists(title):
+                description = (use_llm and describe_night_usage(night_avg, avg, night_avg / avg * 100)) or (
+                    f"Average night-time consumption ({night_avg:.1f} kWh) is "
+                    f"{night_avg / avg * 100:.0f}% of the daytime average. "
+                    "Consider scheduling equipment shutdowns."
+                )
                 db.add(Insight(
                     title=title,
-                    description=(
-                        f"Average night-time consumption ({night_avg:.1f} kWh) is "
-                        f"{night_avg / avg * 100:.0f}% of the daytime average. "
-                        "Consider scheduling equipment shutdowns."
-                    ),
+                    description=description,
                     category=InsightCategory.ENERGY,
                     confidence_score=0.82,
                     estimated_savings=round(night_avg * 0.4 * 0.18 * 30, 2),
                     status=InsightStatus.PENDING,
                     facility_id=1,
+                    organization_id=organization_id,
                 ))
                 created += 1
 
@@ -296,18 +309,20 @@ def auto_insights(db) -> dict:
         if we_avg > wd_avg * 1.3:
             title = "Weekend energy usage exceeds weekday average"
             if not _insight_exists(title):
+                description = (use_llm and describe_weekend_usage(we_avg, wd_avg, we_avg / wd_avg * 100)) or (
+                    f"Weekend average ({we_avg:.1f} kWh) is "
+                    f"{we_avg / wd_avg * 100:.0f}% of the weekday average ({wd_avg:.1f} kWh). "
+                    "Review weekend staffing and equipment schedules."
+                )
                 db.add(Insight(
                     title=title,
-                    description=(
-                        f"Weekend average ({we_avg:.1f} kWh) is "
-                        f"{we_avg / wd_avg * 100:.0f}% of the weekday average ({wd_avg:.1f} kWh). "
-                        "Review weekend staffing and equipment schedules."
-                    ),
+                    description=description,
                     category=InsightCategory.OPERATIONS,
                     confidence_score=0.79,
                     estimated_savings=round((we_avg - wd_avg) * 0.18 * 8, 2),
                     status=InsightStatus.PENDING,
                     facility_id=1,
+                    organization_id=organization_id,
                 ))
                 created += 1
 
@@ -327,6 +342,7 @@ def auto_insights(db) -> dict:
                 message=msg,
                 type=NotificationType.ALERT,
                 read=False,
+                organization_id=organization_id,
             ))
             db.commit()
     except Exception as e:

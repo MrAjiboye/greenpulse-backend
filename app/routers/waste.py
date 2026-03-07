@@ -127,7 +127,10 @@ def create_waste_log(
     current_user: User = Depends(require_role(UserRole.MANAGER, UserRole.ADMIN)),
 ):
     """Log new waste entry"""
-    new_log = WasteLog(**log_data.model_dump())
+    data = log_data.model_dump()
+    if not (current_user.role == UserRole.ADMIN and data.get("organization_id")):
+        data["organization_id"] = current_user.organization_id
+    new_log = WasteLog(**data)
     db.add(new_log)
     db.commit()
     db.refresh(new_log)

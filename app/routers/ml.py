@@ -60,15 +60,20 @@ def get_ml_status(_: User = AdminOnly):
 
 @router.post("/train")
 def train_model(
+    organization_id: int | None = Query(default=None, description="Limit training data to this organisation. Omit to train on all data."),
     db: Session = Depends(get_db),
     _: User = AdminOnly,
 ):
     """
-    Train all models on every energy reading in the database.
+    Train all models on energy readings.
+    Pass ?organization_id=<id> to train on a single organisation's data only.
     Runs IsolationForest + GradientBoosting + LinearRegression
     with TimeSeriesSplit cross-validation.
     """
-    all_readings = db.query(EnergyReading).order_by(EnergyReading.timestamp).all()
+    q = db.query(EnergyReading).order_by(EnergyReading.timestamp)
+    if organization_id is not None:
+        q = q.filter(EnergyReading.organization_id == organization_id)
+    all_readings = q.all()
     if len(all_readings) < MIN_SAMPLES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -83,30 +88,40 @@ def train_model(
 
 @router.post("/train-and-insights")
 def train_and_generate_insights(
+    organization_id: int | None = Query(default=None, description="Scope training and insights to this organisation."),
     db: Session = Depends(get_db),
     _: User = AdminOnly,
 ):
-    """Train models then immediately auto-generate Insight records."""
-    all_readings = db.query(EnergyReading).order_by(EnergyReading.timestamp).all()
+    """Train models then immediately auto-generate Insight records.
+    Pass ?organization_id=<id> to train on and direct insights to a single organisation."""
+    q = db.query(EnergyReading).order_by(EnergyReading.timestamp)
+    if organization_id is not None:
+        q = q.filter(EnergyReading.organization_id == organization_id)
+    all_readings = q.all()
     if len(all_readings) < MIN_SAMPLES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Need at least {MIN_SAMPLES} readings (have {len(all_readings)}).",
         )
     train_result   = train(all_readings)
-    insight_result = auto_insights(db)
+    insight_result = auto_insights(db, organization_id=organization_id)
     return {**train_result, "insights": insight_result}
 
 
 @router.get("/anomalies")
 def get_anomalies(
     days: int = Query(default=7, ge=1, le=90),
+    organization_id: int | None = Query(default=None, description="Limit scan to this organisation's readings."),
     db: Session = Depends(get_db),
     _: User = AdminOnly,
 ):
-    """Anomaly scan on the last N days of readings (default 7)."""
+    """Anomaly scan on the last N days of readings (default 7).
+    Pass ?organization_id=<id> to scan a single organisation only."""
     cutoff = naive_utc(datetime.now(timezone.utc) - timedelta(days=days))
-    readings = db.query(EnergyReading).filter(EnergyReading.timestamp >= cutoff).all()
+    q = db.query(EnergyReading).filter(EnergyReading.timestamp >= cutoff)
+    if organization_id is not None:
+        q = q.filter(EnergyReading.organization_id == organization_id)
+    readings = q.all()
     if not readings:
         return {"anomalies": [], "total_checked": 0, "anomaly_count": 0, "anomaly_rate_pct": 0.0}
     try:
@@ -118,16 +133,16 @@ def get_anomalies(
 @router.get("/forecast")
 def get_forecast(
     hours: int = Query(default=168, ge=24, le=720),
+    organization_id: int | None = Query(default=None, description="Base the forecast on this organisation's readings."),
     db: Session = Depends(get_db),
     _: User = AdminOnly,
 ):
-    """Generate N-hour energy forecast using ensemble model (default 168 h = 7 days)."""
-    last_readings = (
-        db.query(EnergyReading)
-        .order_by(EnergyReading.timestamp.desc())
-        .limit(336)
-        .all()
-    )
+    """Generate N-hour energy forecast using ensemble model (default 168 h = 7 days).
+    Pass ?organization_id=<id> to forecast from a single organisation's data."""
+    q = db.query(EnergyReading).order_by(EnergyReading.timestamp.desc())
+    if organization_id is not None:
+        q = q.filter(EnergyReading.organization_id == organization_id)
+    last_readings = q.limit(336).all()
     try:
         return forecast(horizon_hours=hours, last_readings=last_readings)
     except RuntimeError as e:
@@ -136,11 +151,13 @@ def get_forecast(
 
 @router.post("/generate-insights")
 def generate_insights(
+    organization_id: int | None = Query(default=None, description="Scope insights to this organisation."),
     db: Session = Depends(get_db),
     _: User = AdminOnly,
 ):
-    """Manually trigger insight and notification generation from latest data."""
-    return auto_insights(db)
+    """Manually trigger insight and notification generation from latest data.
+    Pass ?organization_id=<id> to analyse and direct insights to a single organisation."""
+    return auto_insights(db, organization_id=organization_id)
 
 
 @router.get("/cloud")
