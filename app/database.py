@@ -13,7 +13,9 @@ IS_SQLITE = "sqlite" in _db_url
 # Create database engine
 engine = create_engine(
     _db_url,
-    connect_args={"check_same_thread": False} if IS_SQLITE else {}
+    connect_args={"check_same_thread": False} if IS_SQLITE else {},
+    pool_pre_ping=True,       # reconnect on stale connections (Neon closes idle conns)
+    pool_recycle=300,         # recycle connections every 5 min
 )
 
 # Create session factory
