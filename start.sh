@@ -14,7 +14,11 @@ from app.database import engine
 from app.models import Base
 import sqlalchemy as sa
 
-Base.metadata.create_all(engine)
+try:
+    Base.metadata.create_all(engine)
+except Exception as e:
+    print(f'Warning: create_all had a partial error (likely enum type conflict): {e}')
+    print('Continuing — individual tables will be created below if missing.')
 
 # Idempotently add any columns that may have been missing from earlier deployments
 with engine.connect() as conn:

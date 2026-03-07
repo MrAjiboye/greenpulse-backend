@@ -101,7 +101,7 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-API-Key"],
 )
 
 # ── Versioned routers ─────────────────────────────────────────────────────────
