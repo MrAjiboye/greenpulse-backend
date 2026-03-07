@@ -28,21 +28,21 @@ class UserRole(str, enum.Enum):
     VIEWER = "VIEWER"
 
 class InsightCategory(str, enum.Enum):
-    ENERGY = "energy"
-    WASTE = "waste"
-    OPERATIONS = "operations"
+    ENERGY = "ENERGY"
+    WASTE = "WASTE"
+    OPERATIONS = "OPERATIONS"
 
 class InsightStatus(str, enum.Enum):
-    PENDING = "pending"
-    APPLIED = "applied"
-    DISMISSED = "dismissed"
+    PENDING = "PENDING"
+    APPLIED = "APPLIED"
+    DISMISSED = "DISMISSED"
 
 class NotificationType(str, enum.Enum):
-    ALERT = "alert"
-    WARNING = "warning"
-    INSIGHT = "insight"
-    SUCCESS = "success"
-    SYSTEM = "system"
+    ALERT = "ALERT"
+    WARNING = "WARNING"
+    INSIGHT = "INSIGHT"
+    SUCCESS = "SUCCESS"
+    SYSTEM = "SYSTEM"
 
 # User Model
 class User(Base):
