@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.limiter import limiter
-from app.routers import admin, auth, dashboard, energy, insights, notifications, reports, waste, oauth, ml, ingest
+from app.routers import admin, auth, carbon, dashboard, energy, goals, insights, notifications, reports, team, waste, oauth, ml, ingest
 
 # Structured logging
 logging.basicConfig(
@@ -118,17 +118,12 @@ app.include_router(oauth.router, prefix=API_V1)
 app.include_router(ml.router,        prefix=API_V1)
 app.include_router(ml.public_router,  prefix=API_V1)
 app.include_router(ingest.router,     prefix=API_V1)
+app.include_router(carbon.router,     prefix=API_V1)
+app.include_router(goals.router,      prefix=API_V1)
+app.include_router(team.router,       prefix=API_V1)
 
 
 # ── ML scheduler (auto-retraining) ────────────────────────────────────────────
-@app.on_event("startup")
-async def log_config():
-    logger.info("GOOGLE_CLIENT_ID set: %s", bool(settings.GOOGLE_CLIENT_ID))
-    logger.info("RESEND_API_KEY set:   %s", bool(settings.RESEND_API_KEY))
-    logger.info("FRONTEND_URL:         %s", settings.FRONTEND_URL)
-    logger.info("ALLOWED_ORIGINS:      %s", settings.ALLOWED_ORIGINS)
-
-
 @app.on_event("startup")
 async def start_ml_scheduler():
     from app.ml.scheduler import start_scheduler

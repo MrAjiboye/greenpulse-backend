@@ -1,8 +1,8 @@
 import re
-from pydantic import BaseModel, EmailStr, Field, computed_field, field_validator
+from pydantic import BaseModel, EmailStr, Field, computed_field, field_validator, ConfigDict
 from typing import Optional, List
 from datetime import datetime
-from app.models import UserRole, InsightCategory, InsightStatus, NotificationType
+from app.models import UserRole, InsightCategory, InsightStatus, NotificationType, GoalCategory
 
 # ===== AUTH SCHEMAS =====
 class UserCreate(BaseModel):
@@ -175,6 +175,80 @@ class InsightResponse(BaseModel):
 class InsightActionCreate(BaseModel):
     action: str
     reason: Optional[str] = None
+
+# ===== GOAL SCHEMAS =====
+class GoalCreate(BaseModel):
+    name: str
+    category: GoalCategory
+    target_value: float
+    unit: str
+    period_start: datetime
+    period_end: datetime
+
+class GoalUpdate(BaseModel):
+    name: Optional[str] = None
+    target_value: Optional[float] = None
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+
+class GoalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    category: GoalCategory
+    target_value: float
+    unit: str
+    period_start: datetime
+    period_end: datetime
+    actual_value: float = 0.0
+    progress_pct: float = 0.0
+    status: str = "on_track"
+    created_at: datetime
+
+# ===== TEAM SCHEMAS =====
+class TeamInviteCreate(BaseModel):
+    email: EmailStr
+    role: UserRole = UserRole.VIEWER
+
+class TeamMemberResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    email: str
+    first_name: str
+    last_name: str
+    role: UserRole
+    organization_id: Optional[int] = None
+    created_at: datetime
+
+    @computed_field
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}".strip()
+
+class TeamInviteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    email: str
+    role: UserRole
+    created_at: datetime
+    expires_at: datetime
+    accepted_at: Optional[datetime] = None
+
+class AcceptInviteRequest(BaseModel):
+    token: str
+    first_name: str
+    last_name: str
+    password: str = Field(..., min_length=8)
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) > 72:
+            raise ValueError("Password must be 72 characters or fewer")
+        if not re.search(r"[A-Z]", v): raise ValueError("Password needs an uppercase letter")
+        if not re.search(r"[a-z]", v): raise ValueError("Password needs a lowercase letter")
+        if not re.search(r"\d", v):    raise ValueError("Password needs a number")
+        return v
 
 # ===== NOTIFICATION SCHEMAS =====
 class NotificationResponse(BaseModel):

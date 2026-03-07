@@ -1,3 +1,4 @@
+import calendar
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -15,6 +16,76 @@ def _org_q(query, current_user, model):
     if current_user.role == UserRole.ADMIN:
         return query
     return query.filter(model.organization_id == current_user.organization_id)
+
+
+def _period_bounds(period: str, now: datetime):
+    y, m = now.year, now.month
+    if period == "this_month":
+        start = datetime(y, m, 1)
+        end   = now
+        label = now.strftime("%b %Y")
+    elif period == "last_month":
+        pm = m - 1 or 12
+        py = y if m > 1 else y - 1
+        _, last_day = calendar.monthrange(py, pm)
+        start = datetime(py, pm, 1)
+        end   = datetime(py, pm, last_day, 23, 59, 59)
+        label = datetime(py, pm, 1).strftime("%b %Y")
+    elif period == "last_7d":
+        start = now - timedelta(days=7)
+        end   = now
+        label = "Last 7 days"
+    elif period == "last_30d":
+        start = now - timedelta(days=30)
+        end   = now
+        label = "Last 30 days"
+    else:
+        raise HTTPException(400, f"Unknown period '{period}'. Use: this_month, last_month, last_7d, last_30d")
+    return naive_utc(start), naive_utc(end), label
+
+
+@router.get("/compare")
+def compare_waste(
+    period:     str = Query("this_month"),
+    compare_to: str = Query("last_month"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Compare waste totals between two named periods."""
+    now = datetime.now(timezone.utc)
+    cur_start, cur_end, cur_label   = _period_bounds(period, now)
+    prev_start, prev_end, prev_label = _period_bounds(compare_to, now)
+
+    def _period_stats(start, end, label):
+        rows = _org_q(
+            db.query(WasteLog).filter(
+                WasteLog.timestamp >= start,
+                WasteLog.timestamp <= end,
+            ).order_by(WasteLog.timestamp.asc()),
+            current_user, WasteLog
+        ).all()
+        total = sum(r.weight_kg for r in rows)
+        days = max((end - start).days, 1)
+        daily = {}
+        for r in rows:
+            d = r.timestamp.date().isoformat()
+            daily[d] = daily.get(d, 0.0) + r.weight_kg
+        return {
+            "label":        label,
+            "total_kg":     round(total, 2),
+            "avg_daily_kg": round(total / days, 2),
+            "daily":        [{"date": k, "kg": round(v, 2)} for k, v in sorted(daily.items())],
+        }
+
+    cur  = _period_stats(cur_start,  cur_end,  cur_label)
+    prev = _period_stats(prev_start, prev_end, prev_label)
+
+    change_pct = (
+        round((cur["total_kg"] - prev["total_kg"]) / prev["total_kg"] * 100, 1)
+        if prev["total_kg"] > 0 else None
+    )
+
+    return {"current": cur, "previous": prev, "change_pct": change_pct}
 
 
 @router.get("/breakdown")

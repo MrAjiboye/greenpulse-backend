@@ -20,6 +20,7 @@ class Organization(Base):
     waste_logs      = relationship("WasteLog",      back_populates="organization")
     insights        = relationship("Insight",       back_populates="organization")
     notifications   = relationship("Notification",  back_populates="organization")
+    goals           = relationship("Goal",          back_populates="organization")
 
 
 class UserRole(str, enum.Enum):
@@ -140,6 +141,45 @@ class Notification(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     organization = relationship("Organization", back_populates="notifications")
+
+
+class GoalCategory(str, enum.Enum):
+    ENERGY = "ENERGY"
+    WASTE  = "WASTE"
+    CARBON = "CARBON"
+
+
+# Goal Model
+class Goal(Base):
+    __tablename__ = "goals"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    name            = Column(String, nullable=False)
+    category        = Column(Enum(GoalCategory), nullable=False)
+    target_value    = Column(Float, nullable=False)
+    unit            = Column(String, nullable=False)
+    period_start    = Column(DateTime(timezone=True), nullable=False)
+    period_end      = Column(DateTime(timezone=True), nullable=False)
+    created_by      = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+
+    organization = relationship("Organization", back_populates="goals")
+
+
+# Team Invite Model
+class TeamInvite(Base):
+    __tablename__ = "team_invites"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    email           = Column(String, nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    role            = Column(Enum(UserRole), default=UserRole.VIEWER)
+    token_hash      = Column(String, nullable=False)
+    invited_by      = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+    accepted_at     = Column(DateTime(timezone=True), nullable=True)
+    expires_at      = Column(DateTime(timezone=True), nullable=False)
 
 
 # Insight Action Model

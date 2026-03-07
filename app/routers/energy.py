@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+import calendar
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime, timedelta, timezone
@@ -187,6 +188,82 @@ def get_zone_status(
             })
 
     return {"zones": zones}
+
+
+def _period_bounds(period: str, now: datetime):
+    """Return (start, end, label) naive-UTC datetimes for a named period."""
+    y, m = now.year, now.month
+    if period == "this_month":
+        start = datetime(y, m, 1)
+        end   = now
+        label = now.strftime("%b %Y")
+    elif period == "last_month":
+        pm = m - 1 or 12
+        py = y if m > 1 else y - 1
+        _, last_day = calendar.monthrange(py, pm)
+        start = datetime(py, pm, 1)
+        end   = datetime(py, pm, last_day, 23, 59, 59)
+        label = datetime(py, pm, 1).strftime("%b %Y")
+    elif period == "last_7d":
+        start = now - timedelta(days=7)
+        end   = now
+        label = "Last 7 days"
+    elif period == "last_30d":
+        start = now - timedelta(days=30)
+        end   = now
+        label = "Last 30 days"
+    else:
+        raise HTTPException(400, f"Unknown period '{period}'. Use: this_month, last_month, last_7d, last_30d")
+    return naive_utc(start), naive_utc(end), label
+
+
+@router.get("/compare")
+def compare_energy(
+    period:     str = Query("this_month"),
+    compare_to: str = Query("last_month"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Compare energy totals between two named periods."""
+    now = datetime.now(timezone.utc)
+
+    cur_start, cur_end, cur_label   = _period_bounds(period, now)
+    prev_start, prev_end, prev_label = _period_bounds(compare_to, now)
+
+    def _period_stats(start, end, label):
+        rows = _org_q(
+            db.query(EnergyReading).filter(
+                EnergyReading.timestamp >= start,
+                EnergyReading.timestamp <= end,
+            ).order_by(EnergyReading.timestamp.asc()),
+            current_user, EnergyReading
+        ).all()
+        total = sum(r.consumption_kwh for r in rows)
+        days = max((end - start).days, 1)
+        avg_daily = total / days
+        cost = round(total * 0.28, 2)
+        # daily buckets for trend overlay (date string → total kWh)
+        daily = {}
+        for r in rows:
+            d = r.timestamp.date().isoformat()
+            daily[d] = daily.get(d, 0.0) + r.consumption_kwh
+        return {
+            "label":         label,
+            "total_kwh":     round(total, 2),
+            "avg_daily_kwh": round(avg_daily, 2),
+            "cost_gbp":      cost,
+            "daily":         [{"date": k, "kwh": round(v, 2)} for k, v in sorted(daily.items())],
+        }
+
+    cur  = _period_stats(cur_start,  cur_end,  cur_label)
+    prev = _period_stats(prev_start, prev_end, prev_label)
+
+    change_pct = (
+        round((cur["total_kwh"] - prev["total_kwh"]) / prev["total_kwh"] * 100, 1)
+        if prev["total_kwh"] > 0 else None
+    )
+
+    return {"current": cur, "previous": prev, "change_pct": change_pct}
 
 
 @router.post("/readings", response_model=EnergyReadingResponse)

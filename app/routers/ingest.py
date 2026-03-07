@@ -17,18 +17,20 @@ Each organisation has its own unique IoT API key, auto-generated at sign-up.
 Managers can view their key in the Settings page.
 """
 
+import io
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+import pandas as pd
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, UploadFile, File, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_active_user, require_role
 from app.database import get_db
 from app.limiter import limiter
-from app.models import EnergyReading, Organization, User, UserRole
+from app.models import EnergyReading, Organization, User, UserRole, WasteLog
 from app.schemas import EnergyReadingCreate, EnergyReadingResponse
 
 logger = logging.getLogger("greenpulse.ingest")
@@ -184,6 +186,106 @@ def iot_webhook(
         org.name, device_id, reading.zone, reading.consumption_kwh,
     )
     return {"reading_id": reading.id, "status": "accepted"}
+
+
+# ── CSV Upload ─────────────────────────────────────────────────────────────────
+
+@router.post("/energy/csv", status_code=200)
+@limiter.limit("5/minute")
+async def ingest_energy_csv(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MANAGER, UserRole.ADMIN)),
+):
+    """
+    Upload a CSV of energy readings.
+    Required columns: timestamp, consumption_kwh, zone
+    Optional columns: facility_id (default 1)
+    """
+    content = await file.read()
+    try:
+        df = pd.read_csv(io.StringIO(content.decode("utf-8")))
+    except Exception:
+        raise HTTPException(400, "Could not parse CSV file. Ensure it is UTF-8 encoded.")
+
+    required = {"timestamp", "consumption_kwh", "zone"}
+    missing = required - set(df.columns.str.lower())
+    if missing:
+        raise HTTPException(400, f"Missing required columns: {', '.join(missing)}")
+
+    df.columns = df.columns.str.lower()
+    objects, errors = [], []
+
+    for i, row in df.iterrows():
+        try:
+            ts = pd.to_datetime(row["timestamp"], utc=True).to_pydatetime()
+            objects.append(EnergyReading(
+                timestamp=ts,
+                consumption_kwh=float(row["consumption_kwh"]),
+                zone=str(row["zone"]).strip(),
+                facility_id=int(row.get("facility_id", 1)),
+                organization_id=current_user.organization_id,
+            ))
+        except Exception as e:
+            errors.append({"row": int(i) + 2, "reason": str(e)})
+
+    if objects:
+        db.bulk_save_objects(objects)
+        db.commit()
+
+    logger.info("CSV energy import — %d imported, %d errors | user=%s", len(objects), len(errors), current_user.email)
+    return {"imported": len(objects), "skipped": len(errors), "errors": errors[:20]}
+
+
+@router.post("/waste/csv", status_code=200)
+@limiter.limit("5/minute")
+async def ingest_waste_csv(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MANAGER, UserRole.ADMIN)),
+):
+    """
+    Upload a CSV of waste logs.
+    Required columns: timestamp, stream, weight_kg, location
+    Optional columns: contamination_detected (default false)
+    """
+    content = await file.read()
+    try:
+        df = pd.read_csv(io.StringIO(content.decode("utf-8")))
+    except Exception:
+        raise HTTPException(400, "Could not parse CSV file. Ensure it is UTF-8 encoded.")
+
+    required = {"timestamp", "stream", "weight_kg", "location"}
+    missing = required - set(df.columns.str.lower())
+    if missing:
+        raise HTTPException(400, f"Missing required columns: {', '.join(missing)}")
+
+    df.columns = df.columns.str.lower()
+    objects, errors = [], []
+
+    for i, row in df.iterrows():
+        try:
+            ts = pd.to_datetime(row["timestamp"], utc=True).to_pydatetime()
+            contaminated = str(row.get("contamination_detected", "false")).lower() in ("true", "1", "yes")
+            objects.append(WasteLog(
+                timestamp=ts,
+                stream=str(row["stream"]).strip(),
+                weight_kg=float(row["weight_kg"]),
+                location=str(row["location"]).strip(),
+                contamination_detected=contaminated,
+                organization_id=current_user.organization_id,
+            ))
+        except Exception as e:
+            errors.append({"row": int(i) + 2, "reason": str(e)})
+
+    if objects:
+        db.bulk_save_objects(objects)
+        db.commit()
+
+    logger.info("CSV waste import — %d imported, %d errors | user=%s", len(objects), len(errors), current_user.email)
+    return {"imported": len(objects), "skipped": len(errors), "errors": errors[:20]}
 
 
 # ── Source registry ────────────────────────────────────────────────────────────

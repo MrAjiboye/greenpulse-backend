@@ -32,6 +32,38 @@ with engine.connect() as conn:
     else:
         print('email_verified column OK.')
 
+    # goals table
+    conn.execute(sa.text(\"\"\"
+        CREATE TABLE IF NOT EXISTS goals (
+            id SERIAL PRIMARY KEY,
+            organization_id INTEGER REFERENCES organizations(id),
+            name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            target_value FLOAT NOT NULL,
+            unit TEXT NOT NULL,
+            period_start TIMESTAMPTZ NOT NULL,
+            period_end TIMESTAMPTZ NOT NULL,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    \"\"\"))
+
+    # team_invites table
+    conn.execute(sa.text(\"\"\"
+        CREATE TABLE IF NOT EXISTS team_invites (
+            id SERIAL PRIMARY KEY,
+            email TEXT NOT NULL,
+            organization_id INTEGER REFERENCES organizations(id),
+            role TEXT NOT NULL DEFAULT 'VIEWER',
+            token_hash TEXT NOT NULL,
+            invited_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            accepted_at TIMESTAMPTZ,
+            expires_at TIMESTAMPTZ NOT NULL
+        )
+    \"\"\"))
+    conn.commit()
+
 print('Database tables created/verified.')
 "
 

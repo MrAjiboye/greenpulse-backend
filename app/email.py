@@ -121,3 +121,93 @@ def send_verification_email(to_email: str, token: str, first_name: str) -> None:
     )
 
     send_email(to_email, subject, html_body, plain_body)
+
+
+def send_invite_email(to_email: str, token: str, org_name: str, inviter_name: str) -> None:
+    """Send a team invite email with a signed token link."""
+    invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
+
+    subject = f"You've been invited to join {org_name} on GreenPulse"
+
+    html_body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#059669,#10b981);padding:32px 40px;text-align:center;">
+              <span style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">🌿 GreenPulse</span>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px 40px 32px;">
+              <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#111827;">
+                You've been invited to join {org_name}
+              </h1>
+              <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+                <strong>{inviter_name}</strong> has invited you to join <strong>{org_name}</strong>
+                on GreenPulse — a sustainability analytics platform.
+                Click below to create your account and get started.
+              </p>
+
+              <!-- CTA button -->
+              <table cellpadding="0" cellspacing="0" style="margin:0 0 32px;">
+                <tr>
+                  <td style="background:#059669;border-radius:8px;text-align:center;">
+                    <a href="{invite_url}"
+                       style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.2px;">
+                      Accept invitation
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 8px;font-size:13px;color:#9ca3af;">
+                This invitation expires in <strong>7 days</strong>. If you weren't expecting this,
+                you can safely ignore this email.
+              </p>
+              <p style="margin:0;font-size:13px;color:#9ca3af;word-break:break-all;">
+                Or copy this URL into your browser:<br>
+                <a href="{invite_url}" style="color:#059669;">{invite_url}</a>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#9ca3af;">
+                © 2026 GreenPulse Inc. · Sustainability analytics for hospitality businesses
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+    plain_body = (
+        f"You've been invited to join {org_name} on GreenPulse.\n\n"
+        f"{inviter_name} has invited you. Accept the invitation here:\n\n"
+        f"{invite_url}\n\n"
+        "This link expires in 7 days.\n\n"
+        "If you weren't expecting this, you can ignore this email.\n\n"
+        "— The GreenPulse Team"
+    )
+
+    send_email(to_email, subject, html_body, plain_body)
