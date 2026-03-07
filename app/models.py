@@ -23,9 +23,9 @@ class Organization(Base):
 
 
 class UserRole(str, enum.Enum):
-    ADMIN = "admin"
-    MANAGER = "manager"
-    VIEWER = "viewer"
+    ADMIN = "ADMIN"
+    MANAGER = "MANAGER"
+    VIEWER = "VIEWER"
 
 class InsightCategory(str, enum.Enum):
     ENERGY = "energy"
