@@ -54,23 +54,24 @@ def get_performance_report(
     total_potential = sum(i.estimated_savings for i in pending)
 
     # ── Monthly savings trend — true calendar months, no duplicates ──────────
+    # Use naive UTC throughout for in-memory comparisons (avoids aware/naive TypeError)
+    def _ts_naive(insight):
+        ca = insight.created_at
+        return ca.replace(tzinfo=None) if ca and ca.tzinfo else (ca or datetime.min)
+
     savings_trend = []
     for m in range(months - 1, -1, -1):
-        month_start = naive_utc(first_of_current_month - relativedelta(months=m))
-        month_end   = naive_utc(first_of_current_month - relativedelta(months=m - 1)) if m > 0 else naive_utc(now)
+        month_start = (first_of_current_month - relativedelta(months=m)).replace(tzinfo=None)
+        month_end   = (first_of_current_month - relativedelta(months=m - 1)).replace(tzinfo=None) if m > 0 else now.replace(tzinfo=None)
         month_label = month_start.strftime("%b %Y")
-
-        def _ts(insight):
-            ca = insight.created_at
-            return ca.replace(tzinfo=None) if ca.tzinfo else ca
 
         realized_this_month = sum(
             i.estimated_savings for i in applied
-            if month_start <= _ts(i) < month_end
+            if month_start <= _ts_naive(i) < month_end
         )
         potential_this_month = sum(
             i.estimated_savings for i in pending
-            if month_start <= _ts(i) < month_end
+            if month_start <= _ts_naive(i) < month_end
         )
         savings_trend.append({
             "month":     month_label,
