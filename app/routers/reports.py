@@ -93,7 +93,7 @@ def get_performance_report(
             "label":      cat.capitalize(),
             "value":      round(amount, 2),
             "percentage": round(amount / grand_total * 100, 1),
-            "color":      _CAT_COLORS.get(cat, "#9ca3af"),
+            "color":      _CAT_COLORS.get(cat.lower(), "#9ca3af"),
         }
         for cat, amount in cat_totals.items()
     ]
@@ -112,9 +112,9 @@ def get_performance_report(
         "savings_trend":           savings_trend,
         "category_breakdown":      category_breakdown,
         "breakdown_by_category": {
-            "energy":     sum(i.estimated_savings for i in applied if i.category.value == "energy"),
-            "waste":      sum(i.estimated_savings for i in applied if i.category.value == "waste"),
-            "operations": sum(i.estimated_savings for i in applied if i.category.value == "operations"),
+            "energy":     sum(i.estimated_savings for i in applied if i.category.value.lower() == "energy"),
+            "waste":      sum(i.estimated_savings for i in applied if i.category.value.lower() == "waste"),
+            "operations": sum(i.estimated_savings for i in applied if i.category.value.lower() == "operations"),
         },
     }
 
