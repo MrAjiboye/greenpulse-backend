@@ -12,6 +12,9 @@ class Organization(Base):
     id         = Column(Integer, primary_key=True, index=True)
     name       = Column(String, nullable=False)
     iot_api_key = Column(String, unique=True, nullable=True, default=lambda: secrets.token_hex(32))
+    plan       = Column(String, nullable=False, default="free", server_default="free")
+    stripe_customer_id = Column(String, nullable=True)
+    trial_ends_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -77,6 +80,10 @@ class User(Base):
     @property
     def organization_iot_api_key(self):
         return self.organization.iot_api_key if self.organization else None
+
+    @property
+    def organization_plan(self):
+        return self.organization.plan if self.organization else "free"
 
 # Energy Reading Model
 class EnergyReading(Base):

@@ -49,6 +49,7 @@ class UserResponse(BaseModel):
     organization_id: Optional[int] = None
     organization_name: Optional[str] = None
     organization_iot_api_key: Optional[str] = None
+    organization_plan: Optional[str] = "free"
     created_at: datetime
 
     @computed_field

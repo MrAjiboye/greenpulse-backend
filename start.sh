@@ -34,6 +34,16 @@ with engine.connect() as conn:
     ]
     for stmt in missing_col_stmts:
         conn.execute(sa.text(stmt))
+
+    # Org billing columns
+    org_col_stmts = [
+        \"ALTER TABLE organizations ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free'\",
+        'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT',
+        'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ',
+    ]
+    for stmt in org_col_stmts:
+        conn.execute(sa.text(stmt))
+
     conn.commit()
     print('User column migrations applied.')
 

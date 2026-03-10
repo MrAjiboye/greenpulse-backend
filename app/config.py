@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     FROM_EMAIL: str = "no-reply@support.greenpulseanalytics.com"
     FROM_NAME: str = "GreenPulse"
 
+    # Stripe
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PRICE_CORE: str = ""
+    STRIPE_PRICE_PRO: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = True

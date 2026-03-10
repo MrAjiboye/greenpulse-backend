@@ -19,3 +19,4 @@ psycopg2-binary==2.9.9
 httpx==0.25.2
 itsdangerous==2.1.2
 resend==2.10.0
+stripe==11.4.0
