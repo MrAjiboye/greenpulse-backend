@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_role
 from app.database import get_db
 from app.models import EnergyReading, Organization, User, UserRole
-from app.routers.auth import get_current_user
+from app.auth import get_current_user
 
 router = APIRouter(prefix="/octopus", tags=["octopus"])
 
