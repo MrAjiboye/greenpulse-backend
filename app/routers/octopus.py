@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.auth import require_role
 from app.database import get_db
 from app.models import EnergyReading, Organization, User, UserRole
 from app.routers.auth import get_current_user
-from app.routers.goals import require_role
 
 router = APIRouter(prefix="/octopus", tags=["octopus"])
 
