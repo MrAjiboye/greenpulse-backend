@@ -143,6 +143,21 @@ def _check_spike(reading: EnergyReading, db: Session) -> None:
 
 router = APIRouter(prefix="/ingest", tags=["Data Ingestion"])
 
+PRO_PLANS  = {"pro", "enterprise"}
+PAID_PLANS = {"core", "pro", "enterprise"}
+
+
+def _require_plan(org: Organization, allowed_plans: set, feature: str) -> None:
+    """Raise 403 if the org's plan doesn't include the requested feature."""
+    if org.plan not in allowed_plans:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"{feature} is not available on your current plan. "
+                "Please upgrade at greenpulse.com/pricing."
+            ),
+        )
+
 
 # ── Single reading (manual / API) ──────────────────────────────────────────────
 
@@ -166,6 +181,10 @@ def ingest_reading(
         if current_user.role == UserRole.ADMIN and payload.organization_id
         else current_user.organization_id
     )
+    if current_user.role != UserRole.ADMIN:
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+        if org:
+            _require_plan(org, PRO_PLANS, "API data ingestion")
     reading = EnergyReading(
         timestamp=payload.timestamp,
         consumption_kwh=payload.consumption_kwh,
@@ -211,6 +230,10 @@ def ingest_batch(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Maximum 1000 readings per batch.",
         )
+    if current_user.role != UserRole.ADMIN:
+        org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
+        if org:
+            _require_plan(org, PRO_PLANS, "API data ingestion")
 
     objects = [
         EnergyReading(
@@ -277,6 +300,7 @@ def iot_webhook(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing IoT API key.",
         )
+    _require_plan(org, PRO_PLANS, "IoT data ingestion")
 
     ts = payload.timestamp or datetime.now(timezone.utc)
 
@@ -317,6 +341,11 @@ async def ingest_energy_csv(
     Required columns: timestamp, consumption_kwh, zone
     Optional columns: facility_id (default 1)
     """
+    if current_user.role != UserRole.ADMIN:
+        org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
+        if org:
+            _require_plan(org, PAID_PLANS, "CSV data import")
+
     content = await file.read()
     try:
         df = pd.read_csv(io.StringIO(content.decode("utf-8")))
@@ -365,6 +394,11 @@ async def ingest_waste_csv(
     Required columns: timestamp, stream, weight_kg, location
     Optional columns: contamination_detected (default false)
     """
+    if current_user.role != UserRole.ADMIN:
+        org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
+        if org:
+            _require_plan(org, PAID_PLANS, "CSV data import")
+
     content = await file.read()
     try:
         df = pd.read_csv(io.StringIO(content.decode("utf-8")))
