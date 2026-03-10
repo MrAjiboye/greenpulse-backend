@@ -15,6 +15,11 @@ class Organization(Base):
     plan       = Column(String, nullable=False, default="free", server_default="free")
     stripe_customer_id = Column(String, nullable=True)
     trial_ends_at = Column(DateTime(timezone=True), nullable=True)
+    # Octopus Energy integration
+    octopus_api_key     = Column(String, nullable=True)
+    octopus_mpan        = Column(String, nullable=True)
+    octopus_meter_serial = Column(String, nullable=True)
+    octopus_last_sync   = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

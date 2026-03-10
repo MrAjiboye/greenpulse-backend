@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.limiter import limiter
-from app.routers import admin, auth, billing, carbon, dashboard, energy, goals, insights, notifications, reports, team, waste, oauth, ml, ingest
+from app.routers import admin, auth, billing, carbon, dashboard, energy, goals, insights, notifications, reports, team, waste, oauth, ml, ingest, octopus
 
 # Structured logging
 logging.basicConfig(
@@ -122,6 +122,7 @@ app.include_router(carbon.router,     prefix=API_V1)
 app.include_router(goals.router,      prefix=API_V1)
 app.include_router(team.router,       prefix=API_V1)
 app.include_router(billing.router,    prefix=API_V1)
+app.include_router(octopus.router,   prefix=API_V1)
 
 
 # ── ML scheduler (auto-retraining) ────────────────────────────────────────────
