@@ -143,8 +143,9 @@ def _check_spike(reading: EnergyReading, db: Session) -> None:
 
 router = APIRouter(prefix="/ingest", tags=["Data Ingestion"])
 
+# free = 30-day trial with Core-level access
 PRO_PLANS  = {"pro", "enterprise"}
-PAID_PLANS = {"core", "pro", "enterprise"}
+CORE_PLANS = {"free", "core", "pro", "enterprise"}  # free gets Core features during trial
 
 
 def _require_plan(org: Organization, allowed_plans: set, feature: str) -> None:
@@ -341,11 +342,6 @@ async def ingest_energy_csv(
     Required columns: timestamp, consumption_kwh, zone
     Optional columns: facility_id (default 1)
     """
-    if current_user.role != UserRole.ADMIN:
-        org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
-        if org:
-            _require_plan(org, PAID_PLANS, "CSV data import")
-
     content = await file.read()
     try:
         df = pd.read_csv(io.StringIO(content.decode("utf-8")))
@@ -394,11 +390,6 @@ async def ingest_waste_csv(
     Required columns: timestamp, stream, weight_kg, location
     Optional columns: contamination_detected (default false)
     """
-    if current_user.role != UserRole.ADMIN:
-        org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
-        if org:
-            _require_plan(org, PAID_PLANS, "CSV data import")
-
     content = await file.read()
     try:
         df = pd.read_csv(io.StringIO(content.decode("utf-8")))
