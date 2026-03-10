@@ -321,3 +321,67 @@ def send_invite_email(to_email: str, token: str, org_name: str, inviter_name: st
     )
 
     send_email(to_email, subject, html_body, plain_body)
+
+
+def send_demo_request_email(
+    full_name: str,
+    business_name: str,
+    email: str,
+    phone: str,
+    preferred_date: str,
+    preferred_time: str,
+    message: str = "",
+) -> None:
+    """Forward a demo booking request to the GreenPulse inbox."""
+    DEMO_INBOX = "info@greenpulseanalytics.com"
+    subject = f"Demo request - {business_name}"
+    msg = message.strip() or "N/A"
+
+    html_body = f"""
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <tr><td style="background:linear-gradient(135deg,#059669,#10b981);padding:32px 40px;text-align:center;">
+          <span style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">🌿 GreenPulse</span>
+        </td></tr>
+        <tr><td style="background:#f0fdf4;border-bottom:2px solid #bbf7d0;padding:16px 40px;">
+          <p style="margin:0;font-size:13px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:0.5px;">New demo request</p>
+        </td></tr>
+        <tr><td style="padding:40px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+            <tr style="background:#f9fafb;"><td style="padding:12px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;width:140px;">Full name</td><td style="padding:12px 16px;font-size:14px;color:#111827;">{full_name}</td></tr>
+            <tr><td style="padding:12px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;border-top:1px solid #e5e7eb;">Business</td><td style="padding:12px 16px;font-size:14px;color:#111827;border-top:1px solid #e5e7eb;">{business_name}</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:12px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;border-top:1px solid #e5e7eb;">Email</td><td style="padding:12px 16px;font-size:14px;border-top:1px solid #e5e7eb;"><a href="mailto:{email}" style="color:#059669;">{email}</a></td></tr>
+            <tr><td style="padding:12px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;border-top:1px solid #e5e7eb;">Phone</td><td style="padding:12px 16px;font-size:14px;color:#111827;border-top:1px solid #e5e7eb;">{phone}</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:12px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;border-top:1px solid #e5e7eb;">Date</td><td style="padding:12px 16px;font-size:14px;color:#111827;border-top:1px solid #e5e7eb;">{preferred_date}</td></tr>
+            <tr><td style="padding:12px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;border-top:1px solid #e5e7eb;">Time</td><td style="padding:12px 16px;font-size:14px;color:#111827;border-top:1px solid #e5e7eb;">{preferred_time} (GMT)</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:12px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;border-top:1px solid #e5e7eb;vertical-align:top;">Message</td><td style="padding:12px 16px;font-size:14px;color:#374151;border-top:1px solid #e5e7eb;">{msg}</td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="background:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;text-align:center;">
+          <p style="margin:0;font-size:12px;color:#9ca3af;">Submitted via greenpulseanalytics.com/demo</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+
+    plain_body = (
+        f"New demo request\n\n"
+        f"Full name:   {full_name}\n"
+        f"Business:    {business_name}\n"
+        f"Email:       {email}\n"
+        f"Phone:       {phone}\n"
+        f"Date:        {preferred_date}\n"
+        f"Time:        {preferred_time} (GMT)\n"
+        f"Message:     {msg}\n\n"
+        "Submitted via greenpulseanalytics.com/demo"
+    )
+
+    send_email(DEMO_INBOX, subject, html_body, plain_body)
