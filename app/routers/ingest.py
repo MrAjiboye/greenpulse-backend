@@ -19,21 +19,127 @@ Managers can view their key in the Settings page.
 
 import io
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
+import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, UploadFile, File, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_active_user, require_role
-from app.database import get_db
+from app.database import get_db, naive_utc
 from app.limiter import limiter
-from app.models import EnergyReading, Organization, User, UserRole, WasteLog
+from app.models import EnergyReading, Notification, NotificationType, Organization, User, UserRole, WasteLog
 from app.schemas import EnergyReadingCreate, EnergyReadingResponse
 
 logger = logging.getLogger("greenpulse.ingest")
+
+
+def _check_spike(reading: EnergyReading, db: Session) -> None:
+    """
+    Lightweight real-time spike check triggered on every live ingest.
+
+    Fires if the new reading exceeds mean + 3σ for that zone over the last 7 days.
+    Requires at least 10 historical readings to establish a reliable baseline.
+    Deduplicates: at most one alert per zone per hour (avoids alert fatigue from
+    chatty meters).
+    On a confirmed spike: creates an in-app Notification and emails all active
+    MANAGER users in the organisation.
+    """
+    org_id = reading.organization_id
+    kwh    = reading.consumption_kwh
+
+    if not org_id or kwh <= 0:
+        return
+
+    # ── Fetch recent baseline for this zone ───────────────────────────────────
+    cutoff_7d = naive_utc(datetime.now(timezone.utc) - timedelta(days=7))
+    recent = (
+        db.query(EnergyReading)
+        .filter(
+            EnergyReading.organization_id == org_id,
+            EnergyReading.zone == reading.zone,
+            EnergyReading.timestamp >= cutoff_7d,
+            EnergyReading.consumption_kwh > 0,
+        )
+        .all()
+    )
+    if len(recent) < 10:
+        return  # not enough history to call anything a spike
+
+    values = np.array([r.consumption_kwh for r in recent], dtype=float)
+    mean   = float(values.mean())
+    std    = float(values.std())
+
+    if std == 0 or kwh <= mean + 3.0 * std:
+        return  # within normal range
+
+    # ── Dedup: skip if we already alerted for this zone in the last hour ──────
+    cutoff_1h = naive_utc(datetime.now(timezone.utc) - timedelta(hours=1))
+    already_alerted = (
+        db.query(Notification)
+        .filter(
+            Notification.organization_id == org_id,
+            Notification.type == NotificationType.ALERT,
+            Notification.created_at >= cutoff_1h,
+            Notification.title.contains(reading.zone),
+        )
+        .first()
+    )
+    if already_alerted:
+        return
+
+    # ── Create in-app notification ────────────────────────────────────────────
+    ratio = kwh / mean if mean > 0 else 0
+    msg = (
+        f"Zone '{reading.zone}' recorded {kwh:.1f} kWh — "
+        f"{ratio:.1f}× its 7-day average ({mean:.1f} kWh). "
+        "This may indicate a fault, equipment left on, or unscheduled usage."
+    )
+    db.add(Notification(
+        title=f"Energy spike — {reading.zone}",
+        message=msg,
+        type=NotificationType.ALERT,
+        read=False,
+        organization_id=org_id,
+    ))
+    db.commit()
+    logger.warning("Spike alert created — org=%s zone=%s kwh=%.2f (%.1f× avg)", org_id, reading.zone, kwh, ratio)
+
+    # ── Email active managers in this org ─────────────────────────────────────
+    try:
+        from app.email import send_alert_email
+        from app.config import settings
+
+        org      = db.query(Organization).filter(Organization.id == org_id).first()
+        org_name = org.name if org else "your organisation"
+        managers = (
+            db.query(User)
+            .filter(
+                User.organization_id == org_id,
+                User.role == UserRole.MANAGER,
+                User.is_active == True,
+            )
+            .all()
+        )
+        dashboard_url = f"{settings.FRONTEND_URL}/notifications"
+        for manager in managers:
+            try:
+                send_alert_email(
+                    to_email=manager.email,
+                    first_name=manager.first_name,
+                    alert_title=f"Energy spike — {reading.zone}",
+                    alert_message=msg,
+                    org_name=org_name,
+                    anomaly_count=1,
+                    dashboard_url=dashboard_url,
+                )
+            except Exception as mail_err:
+                logger.warning("Spike email to %s failed: %s", manager.email, mail_err)
+    except Exception as e:
+        logger.warning("Spike email setup failed: %s", e)
 
 router = APIRouter(prefix="/ingest", tags=["Data Ingestion"])
 
@@ -75,6 +181,10 @@ def ingest_reading(
         "Ingested reading — zone=%s kwh=%.2f ts=%s user=%s",
         reading.zone, reading.consumption_kwh, reading.timestamp, current_user.email,
     )
+    try:
+        _check_spike(reading, db)
+    except Exception as e:
+        logger.warning("Spike check failed: %s", e)
     return reading
 
 
@@ -185,6 +295,10 @@ def iot_webhook(
         "IoT webhook — org=%s device=%s zone=%s kwh=%.2f",
         org.name, device_id, reading.zone, reading.consumption_kwh,
     )
+    try:
+        _check_spike(reading, db)
+    except Exception as e:
+        logger.warning("Spike check failed: %s", e)
     return {"reading_id": reading.id, "status": "accepted"}
 
 

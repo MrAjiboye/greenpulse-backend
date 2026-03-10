@@ -100,7 +100,7 @@ def anomaly_scan(readings, db=None) -> dict:
             "severity":        severity,
         })
 
-    total = len(readings)
+    total = len(df)   # use cleaned row count — anomalies are detected on df, not raw readings
     count = len(anomalies)
     rate  = round(count / total * 100, 1) if total else 0.0
 
@@ -159,11 +159,13 @@ def forecast(horizon_hours: int = 168, last_readings=None) -> dict:
     lr_pred  = lr.predict(X)
     ensemble = w_gbr * gbr_pred + w_lr * lr_pred
 
-    # Confidence band: use CV residuals stored in bundle if available,
-    # otherwise fall back to ±15% placeholder
-    cv_mae = bundle.get("metrics", {}).get("gbr_val_mae")
-    if cv_mae and cv_mae > 0:
-        half_band = cv_mae * 1.64  # ~90% PI assuming normal residuals
+    # Confidence band: use CV RMSE as proxy for σ; 90% PI = ±1.645σ.
+    # RMSE is preferred over MAE here because RMSE ≈ σ for zero-mean errors,
+    # whereas MAE ≈ 0.798σ — using MAE * 1.64 underestimates the band by ~20%.
+    # Fall back to ±15% placeholder if metrics are unavailable.
+    cv_rmse = bundle.get("metrics", {}).get("gbr_val_rmse")
+    if cv_rmse and cv_rmse > 0:
+        half_band = cv_rmse * 1.645  # 90% PI: 1.645 * σ
     else:
         half_band = None  # use percentage fallback
 
@@ -254,12 +256,14 @@ def auto_insights(db, organization_id: int | None = None) -> dict:
                 f"Peak consumption ({peak:.1f} kWh) is {peak_ratio:.1f}x the 7-day average "
                 f"({avg:.1f} kWh). Investigate high-draw equipment during peak windows."
             )
+            # Confidence scales with how extreme the ratio is: 0.70 at 2×, capped at 0.94 above 5×
+            peak_confidence = round(min(0.94, 0.70 + (peak_ratio - 2.0) * 0.08), 2)
             db.add(Insight(
                 title=title,
                 description=description,
                 category=InsightCategory.ENERGY,
-                confidence_score=0.87,
-                estimated_savings=round((peak - avg) * 0.18 * 30, 2),
+                confidence_score=peak_confidence,
+                estimated_savings=round((peak - avg) * 0.28 * 30, 2),
                 status=InsightStatus.PENDING,
                 facility_id=1,
                 organization_id=organization_id,
@@ -282,12 +286,14 @@ def auto_insights(db, organization_id: int | None = None) -> dict:
                     f"{night_avg / avg * 100:.0f}% of the daytime average. "
                     "Consider scheduling equipment shutdowns."
                 )
+                # Confidence scales with night/day ratio: 0.65 at 50%, capped at 0.92 above 120%
+                night_confidence = round(min(0.92, 0.65 + (night_avg / avg - 0.5) * 0.40), 2)
                 db.add(Insight(
                     title=title,
                     description=description,
                     category=InsightCategory.ENERGY,
-                    confidence_score=0.82,
-                    estimated_savings=round(night_avg * 0.4 * 0.18 * 30, 2),
+                    confidence_score=night_confidence,
+                    estimated_savings=round(night_avg * 0.4 * 0.28 * 30, 2),
                     status=InsightStatus.PENDING,
                     facility_id=1,
                     organization_id=organization_id,
@@ -314,12 +320,14 @@ def auto_insights(db, organization_id: int | None = None) -> dict:
                     f"{we_avg / wd_avg * 100:.0f}% of the weekday average ({wd_avg:.1f} kWh). "
                     "Review weekend staffing and equipment schedules."
                 )
+                # Confidence scales with weekend/weekday ratio: 0.65 at 1.3×, capped at 0.90 above 2.1×
+                we_confidence = round(min(0.90, 0.65 + (we_avg / wd_avg - 1.3) * 0.35), 2)
                 db.add(Insight(
                     title=title,
                     description=description,
                     category=InsightCategory.OPERATIONS,
-                    confidence_score=0.79,
-                    estimated_savings=round((we_avg - wd_avg) * 0.18 * 8, 2),
+                    confidence_score=we_confidence,
+                    estimated_savings=round((we_avg - wd_avg) * 0.28 * 8, 2),
                     status=InsightStatus.PENDING,
                     facility_id=1,
                     organization_id=organization_id,
@@ -328,7 +336,7 @@ def auto_insights(db, organization_id: int | None = None) -> dict:
 
     db.commit()
 
-    # ---- Notification for anomalies ----------------------------------------
+    # ---- Notification + email alert for anomalies ---------------------------
     try:
         scan = anomaly_scan(readings, db=None)
         high = [a for a in scan["anomalies"] if a["severity"] == "high"]
@@ -345,6 +353,39 @@ def auto_insights(db, organization_id: int | None = None) -> dict:
                 organization_id=organization_id,
             ))
             db.commit()
+
+            # Email every active MANAGER in the org
+            if organization_id is not None:
+                try:
+                    from app.models import Organization, User, UserRole
+                    from app.email import send_alert_email
+                    from app.config import settings
+
+                    org = db.query(Organization).filter(Organization.id == organization_id).first()
+                    org_name = org.name if org else "your organisation"
+                    dashboard_url = f"{settings.FRONTEND_URL}/notifications"
+
+                    managers = db.query(User).filter(
+                        User.organization_id == organization_id,
+                        User.role == UserRole.MANAGER,
+                        User.is_active == True,
+                    ).all()
+
+                    for manager in managers:
+                        try:
+                            send_alert_email(
+                                to_email=manager.email,
+                                first_name=manager.first_name,
+                                alert_title="Energy anomalies detected",
+                                alert_message=msg,
+                                org_name=org_name,
+                                anomaly_count=len(high),
+                                dashboard_url=dashboard_url,
+                            )
+                        except Exception as mail_err:
+                            logger.warning("Alert email to %s failed: %s", manager.email, mail_err)
+                except Exception as e:
+                    logger.warning("Alert email setup failed: %s", e)
     except Exception as e:
         logger.warning("Anomaly notification skipped: %s", e)
 

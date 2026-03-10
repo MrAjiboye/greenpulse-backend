@@ -123,6 +123,116 @@ def send_verification_email(to_email: str, token: str, first_name: str) -> None:
     send_email(to_email, subject, html_body, plain_body)
 
 
+def send_alert_email(
+    to_email: str,
+    first_name: str,
+    alert_title: str,
+    alert_message: str,
+    org_name: str,
+    anomaly_count: int,
+    dashboard_url: str,
+) -> None:
+    """Send an energy alert email to a manager when high-severity anomalies are detected."""
+    subject = f"⚡ Energy alert: {anomaly_count} anomal{'y' if anomaly_count == 1 else 'ies'} detected — {org_name}"
+
+    html_body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#059669,#10b981);padding:32px 40px;text-align:center;">
+              <span style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">🌿 GreenPulse</span>
+            </td>
+          </tr>
+
+          <!-- Alert banner -->
+          <tr>
+            <td style="background:#fef2f2;border-bottom:2px solid #fecaca;padding:16px 40px;">
+              <p style="margin:0;font-size:13px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:0.5px;">
+                ⚡ Energy Alert — {org_name}
+              </p>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px 40px 32px;">
+              <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#111827;">
+                Hi {first_name}, action may be required
+              </h1>
+              <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+                GreenPulse detected <strong style="color:#111827;">{anomaly_count} high-severity energy anomal{'y' if anomaly_count == 1 else 'ies'}</strong>
+                in your facility in the last 7 days. This may indicate equipment left running, a fault, or an unexpected usage event.
+              </p>
+
+              <!-- Alert detail box -->
+              <table cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 28px;">
+                <tr>
+                  <td style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;">
+                    <p style="margin:0;font-size:14px;color:#374151;line-height:1.6;">{alert_message}</p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- CTA button -->
+              <table cellpadding="0" cellspacing="0" style="margin:0 0 32px;">
+                <tr>
+                  <td style="background:#dc2626;border-radius:8px;text-align:center;">
+                    <a href="{dashboard_url}"
+                       style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.2px;">
+                      View alerts on dashboard →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0;font-size:13px;color:#9ca3af;line-height:1.6;">
+                Log in to your GreenPulse dashboard to review zone-level consumption and take action.
+                If this looks expected, you can dismiss the alert from the Notifications page.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#9ca3af;">
+                © 2026 GreenPulse Inc. · You're receiving this because you are a manager on <strong>{org_name}</strong>.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+    plain_body = (
+        f"Hi {first_name},\n\n"
+        f"GreenPulse detected {anomaly_count} high-severity energy anomal{'y' if anomaly_count == 1 else 'ies'} "
+        f"in {org_name} in the last 7 days.\n\n"
+        f"{alert_message}\n\n"
+        f"View your alerts: {dashboard_url}\n\n"
+        "Log in to review zone-level consumption and take action.\n\n"
+        "— The GreenPulse Team"
+    )
+
+    send_email(to_email, subject, html_body, plain_body)
+
+
 def send_invite_email(to_email: str, token: str, org_name: str, inviter_name: str) -> None:
     """Send a team invite email with a signed token link."""
     invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"

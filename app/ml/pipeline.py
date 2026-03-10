@@ -369,25 +369,35 @@ class EnergyPreprocessor:
         df["is_peak"]           = ((df["hour"] >= 16) & (df["hour"] <= 19)).astype(int)
         df["is_night"]          = ((df["hour"] <= 5) | (df["hour"] >= 22)).astype(int)
 
-        # Rolling features
+        # Rolling features — computed per zone so zones don't bleed into each other
         df = df.set_index("timestamp")
-        kw = df["consumption_kwh"]
-        df["rolling_mean_1h"]  = kw.rolling("1h",  min_periods=1).mean()
-        df["rolling_std_1h"]   = kw.rolling("1h",  min_periods=1).std().fillna(0)
-        df["rolling_mean_6h"]  = kw.rolling("6h",  min_periods=1).mean()
-        df["rolling_mean_24h"] = kw.rolling("24h", min_periods=1).mean()
-        df["rolling_std_24h"]  = kw.rolling("24h", min_periods=1).std().fillna(0)
-        df["rolling_max_24h"]  = kw.rolling("24h", min_periods=1).max()
-        df["rolling_mean_7d"]  = kw.rolling("7D",  min_periods=1).mean()
-        df = df.reset_index()
+        zone_groups = []
+        for _, zone_df in df.groupby("zone", sort=False):
+            kw = zone_df["consumption_kwh"]
+            zone_df = zone_df.copy()
+            zone_df["rolling_mean_1h"]  = kw.rolling("1h",  min_periods=1).mean()
+            zone_df["rolling_std_1h"]   = kw.rolling("1h",  min_periods=1).std().fillna(0)
+            zone_df["rolling_mean_6h"]  = kw.rolling("6h",  min_periods=1).mean()
+            zone_df["rolling_mean_24h"] = kw.rolling("24h", min_periods=1).mean()
+            zone_df["rolling_std_24h"]  = kw.rolling("24h", min_periods=1).std().fillna(0)
+            zone_df["rolling_max_24h"]  = kw.rolling("24h", min_periods=1).max()
+            zone_df["rolling_mean_7d"]  = kw.rolling("7D",  min_periods=1).mean()
+            zone_groups.append(zone_df)
+        df = pd.concat(zone_groups).sort_index().reset_index()
 
-        # Lag features
+        # Lag features — computed per zone so lag_1h for "bar" is bar's previous reading,
+        # not whatever zone happened to appear one row earlier in the sorted DataFrame
         mean_val = df["consumption_kwh"].mean()
-        df["lag_1h"]   = df["consumption_kwh"].shift(1).fillna(mean_val)
-        df["lag_2h"]   = df["consumption_kwh"].shift(2).fillna(mean_val)
-        df["lag_6h"]   = df["consumption_kwh"].shift(6).fillna(mean_val)
-        df["lag_24h"]  = df["consumption_kwh"].shift(24).fillna(mean_val)
-        df["lag_168h"] = df["consumption_kwh"].shift(168).fillna(mean_val)
+        for col in ["lag_1h", "lag_2h", "lag_6h", "lag_24h", "lag_168h"]:
+            df[col] = mean_val  # initialise with global mean as fallback
+        for zone_name in df["zone"].unique():
+            mask = df["zone"] == zone_name
+            kw   = df.loc[mask, "consumption_kwh"]
+            df.loc[mask, "lag_1h"]   = kw.shift(1).fillna(mean_val).values
+            df.loc[mask, "lag_2h"]   = kw.shift(2).fillna(mean_val).values
+            df.loc[mask, "lag_6h"]   = kw.shift(6).fillna(mean_val).values
+            df.loc[mask, "lag_24h"]  = kw.shift(24).fillna(mean_val).values
+            df.loc[mask, "lag_168h"] = kw.shift(168).fillna(mean_val).values
 
         # Zone encoding
         if not self._zone_classes:
