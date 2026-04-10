@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_active_user, require_role
 from app.database import get_db, naive_utc
 from app.ml.cloud import cloud_health
-from app.ml.predictor import anomaly_scan, auto_insights, forecast
+from app.ml.predictor import anomaly_scan, auto_insights, forecast, ghost_load_analysis, zone_health_scores
 from app.ml.trainer import MIN_SAMPLES, load_bundle, train
 from app.models import EnergyReading, User, UserRole
 
@@ -185,19 +185,72 @@ def public_ml_status(current_user: User = Depends(get_current_active_user)):
 
 @public_router.get("/forecast")
 def public_forecast(
-    hours: int = Query(default=24, ge=1, le=168),
+    hours: int = Query(default=24, ge=1, le=336),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Short-term forecast for the user dashboard (default 24 h)."""
+    """Short-term forecast for the user dashboard (default 24 h, max 336 h = 14 days)."""
     last_readings = (
         db.query(EnergyReading)
+        .filter(EnergyReading.organization_id == current_user.organization_id)
         .order_by(EnergyReading.timestamp.desc())
-        .limit(168)
+        .limit(336)
         .all()
     )
     try:
         return forecast(horizon_hours=hours, last_readings=last_readings)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@public_router.get("/ghost-load")
+def public_ghost_load(
+    days: int = Query(default=30, ge=7, le=90),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Decompose energy consumption into base load, operational load, and ghost load.
+    Ghost load = energy above the base load floor during off-hours (22:00–06:00).
+    Does not require a trained ML model.
+    """
+    cutoff = naive_utc(datetime.now(timezone.utc) - timedelta(days=days))
+    readings = (
+        db.query(EnergyReading)
+        .filter(
+            EnergyReading.timestamp >= cutoff,
+            EnergyReading.organization_id == current_user.organization_id,
+        )
+        .order_by(EnergyReading.timestamp)
+        .all()
+    )
+    return ghost_load_analysis(readings)
+
+
+@public_router.get("/zone-health")
+def public_zone_health(
+    days: int = Query(default=14, ge=7, le=30),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Score each zone 0–100 for consumption health (anomaly rate, variance, trend).
+    Requires a trained ML model.
+    """
+    cutoff = naive_utc(datetime.now(timezone.utc) - timedelta(days=days))
+    readings = (
+        db.query(EnergyReading)
+        .filter(
+            EnergyReading.timestamp >= cutoff,
+            EnergyReading.organization_id == current_user.organization_id,
+        )
+        .order_by(EnergyReading.timestamp)
+        .all()
+    )
+    if not readings:
+        return {"zones": []}
+    try:
+        return zone_health_scores(readings)
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

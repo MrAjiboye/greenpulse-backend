@@ -392,6 +392,199 @@ def auto_insights(db, organization_id: int | None = None) -> dict:
     return {"created": created, "skipped": None}
 
 
+# ---- Signature analysis -------------------------------------------------------
+
+def ghost_load_analysis(readings, electricity_rate: float = 0.28) -> dict:
+    """
+    Identify ghost load (energy wasted during off-hours) by decomposing
+    whole-site consumption into base load, operational load, and ghost load.
+
+    Base load = rolling 24h minimum per zone (always-on equipment floor).
+    Ghost load = consumption above base load during off-hours (22:00–06:00).
+
+    Does NOT require a trained ML bundle — pure statistical analysis.
+    """
+    empty = {
+        "total_kwh": 0.0, "base_load_kwh": 0.0, "operational_kwh": 0.0,
+        "ghost_load_kwh": 0.0, "ghost_cost_per_hr": 0.0,
+        "estimated_monthly_waste_cost": 0.0, "savings_potential_pct": 0.0,
+        "hourly_heatmap": [],
+    }
+    if not readings:
+        return empty
+
+    rows = []
+    for r in readings:
+        ts = (
+            pd.Timestamp(r.timestamp).tz_localize(None)
+            if getattr(r.timestamp, "tzinfo", None)
+            else pd.Timestamp(r.timestamp)
+        )
+        rows.append({
+            "timestamp": ts,
+            "consumption_kwh": max(0.0, float(r.consumption_kwh)),
+            "zone": str(r.zone).strip().lower(),
+        })
+
+    df = pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+    if df.empty:
+        return empty
+
+    # Rolling 24h minimum per zone = base load estimate
+    df = df.set_index("timestamp")
+    zone_frames = []
+    for _, zone_df in df.groupby("zone", sort=False):
+        zdf = zone_df.copy()
+        zdf["base_load"] = zdf["consumption_kwh"].rolling("24h", min_periods=1).min()
+        zone_frames.append(zdf)
+    df = pd.concat(zone_frames).sort_index().reset_index()
+
+    df["hour"]         = df["timestamp"].dt.hour
+    df["day_of_week"]  = df["timestamp"].dt.dayofweek
+    df["is_ghost_hour"] = (df["hour"] <= 5) | (df["hour"] >= 22)
+
+    total_kwh    = float(df["consumption_kwh"].sum())
+    base_load_kwh = float(df["base_load"].sum())
+
+    # Ghost load = excess above base load specifically during ghost hours
+    ghost_mask  = df["is_ghost_hour"]
+    ghost_excess = (
+        df.loc[ghost_mask, "consumption_kwh"] - df.loc[ghost_mask, "base_load"]
+    ).clip(lower=0)
+    ghost_load_kwh   = float(ghost_excess.sum())
+    operational_kwh  = max(0.0, total_kwh - base_load_kwh - ghost_load_kwh)
+
+    ghost_hours_count   = int(ghost_mask.sum())
+    ghost_cost_per_hr   = (
+        ghost_load_kwh / ghost_hours_count * electricity_rate
+    ) if ghost_hours_count > 0 else 0.0
+    # 8 ghost hours per night × 30 days
+    estimated_monthly_waste_cost = ghost_cost_per_hr * 8 * 30
+    savings_potential_pct = (ghost_load_kwh / total_kwh * 100) if total_kwh > 0 else 0.0
+
+    # Heatmap: avg consumption per (day_of_week, hour) cell
+    hm = (
+        df.groupby(["day_of_week", "hour"])["consumption_kwh"]
+        .mean()
+        .reset_index()
+    )
+    hm["is_ghost_hour"] = (hm["hour"] <= 5) | (hm["hour"] >= 22)
+    hm = hm.sort_values(["day_of_week", "hour"]).reset_index(drop=True)
+
+    hourly_heatmap = [
+        {
+            "hour":         int(row["hour"]),
+            "day_of_week":  int(row["day_of_week"]),
+            "avg_kwh":      round(float(row["consumption_kwh"]), 3),
+            "is_ghost_hour": bool(row["is_ghost_hour"]),
+        }
+        for _, row in hm.iterrows()
+    ]
+
+    return {
+        "total_kwh":                    round(total_kwh, 2),
+        "base_load_kwh":                round(base_load_kwh, 2),
+        "operational_kwh":              round(operational_kwh, 2),
+        "ghost_load_kwh":               round(ghost_load_kwh, 2),
+        "ghost_cost_per_hr":            round(ghost_cost_per_hr, 2),
+        "estimated_monthly_waste_cost": round(estimated_monthly_waste_cost, 2),
+        "savings_potential_pct":        round(savings_potential_pct, 1),
+        "hourly_heatmap":               hourly_heatmap,
+    }
+
+
+def zone_health_scores(readings) -> dict:
+    """
+    Score each zone 0–100 for consumption health based on three signals:
+      A (40 pts) — anomaly rate via the trained IsolationForest
+      B (30 pts) — coefficient of variation (consumption stability)
+      C (30 pts) — 7-day consumption trend direction
+
+    Requires a trained model bundle. Raises RuntimeError if none exists.
+    """
+    bundle = load_bundle()
+    if bundle is None:
+        raise RuntimeError("No model trained. Train the model first.")
+
+    prep = bundle["prep"]
+    iso  = bundle["iso"]
+
+    if not readings:
+        return {"zones": []}
+
+    df = prep.clean_orm(readings)
+    if df.empty:
+        return {"zones": []}
+
+    now      = df["timestamp"].max()
+    split_ts = now - pd.Timedelta(days=7)
+
+    zones_out = []
+    for zone_name in df["zone"].unique():
+        zdf = df[df["zone"] == zone_name].copy()
+
+        # Signal A: anomaly rate (0–40 pts)
+        try:
+            X     = prep.anomaly_X(zdf, fit=False)
+            preds = iso.predict(X)
+            anomaly_rate = float((preds == -1).sum() / len(preds) * 100)
+        except Exception:
+            anomaly_rate = 0.0
+        score_a = max(0.0, 40.0 - anomaly_rate * 2)
+
+        # Signal B: coefficient of variation (0–30 pts)
+        kwh_vals = zdf["consumption_kwh"].values
+        mean_val = float(np.mean(kwh_vals))
+        std_val  = float(np.std(kwh_vals))
+        cv       = std_val / mean_val if mean_val > 0 else 0.0
+        score_b  = float(np.clip(30.0 - cv * 15, 0, 30))
+
+        # Signal C: 7-day trend (0–30 pts)
+        recent_df = zdf[zdf["timestamp"] >= split_ts]
+        prior_df  = zdf[zdf["timestamp"] <  split_ts]
+
+        if len(recent_df) >= 5 and len(prior_df) >= 5:
+            recent_avg = float(recent_df["consumption_kwh"].mean())
+            prior_avg  = float(prior_df["consumption_kwh"].mean())
+            trend_pct  = ((recent_avg - prior_avg) / prior_avg * 100) if prior_avg > 0 else 0.0
+            if trend_pct <= -5:
+                score_c = 30.0
+            elif trend_pct <= 10:
+                score_c = float(30.0 - (trend_pct + 5) / 15 * 15)
+            else:
+                score_c = float(max(0.0, 15.0 - (trend_pct - 10)))
+        else:
+            trend_pct = 0.0
+            score_c   = 15.0  # neutral — not enough data
+
+        health_score = int(np.clip(round(score_a + score_b + score_c), 0, 100))
+        status = "green" if health_score >= 70 else ("amber" if health_score >= 40 else "red")
+
+        # Worst signal drives the recommendation
+        if score_a <= min(score_a, score_b) and score_a < 30:
+            recommendation = "High anomaly rate detected - check equipment in this zone"
+        elif score_b < score_a and score_b < 20:
+            recommendation = "Unstable consumption variance - investigate load fluctuations"
+        elif score_c < 10:
+            recommendation = "Rising consumption trend - review scheduling or equipment"
+        else:
+            recommendation = "Zone operating within normal parameters"
+
+        zones_out.append({
+            "zone":             zone_name,
+            "health_score":     health_score,
+            "status":           status,
+            "anomaly_rate_pct": round(anomaly_rate, 1),
+            "trend_pct":        round(trend_pct, 1),
+            "recommendation":   recommendation,
+        })
+
+    status_order = {"red": 0, "amber": 1, "green": 2}
+    zones_out.sort(key=lambda z: (status_order[z["status"]], -z["health_score"]))
+
+    return {"zones": zones_out}
+
+
 # ---- Helpers -----------------------------------------------------------------
 
 def _auto_notify_anomalies(anomalies: list, db) -> None:
