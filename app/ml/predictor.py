@@ -336,6 +336,52 @@ def auto_insights(db, organization_id: int | None = None) -> dict:
 
     db.commit()
 
+    # ---- Email managers about new insights (notify_new_insights=True) --------
+    if created > 0 and organization_id is not None:
+        try:
+            from app.models import Organization, User, UserRole
+            from app.email import send_insight_digest_email
+            from app.config import settings
+
+            org = db.query(Organization).filter(Organization.id == organization_id).first()
+            org_name = org.name if org else "your organisation"
+            dashboard_url = f"{settings.FRONTEND_URL}/insights"
+
+            # Sum estimated savings from all pending insights in this org
+            from app.models import Insight as InsightModel, InsightStatus as IS
+            total_savings = (
+                db.query(InsightModel)
+                .filter(
+                    InsightModel.organization_id == organization_id,
+                    InsightModel.status == IS.PENDING,
+                )
+                .with_entities(InsightModel.estimated_savings)
+                .all()
+            )
+            total_savings_val = sum(r[0] or 0 for r in total_savings)
+
+            managers = db.query(User).filter(
+                User.organization_id == organization_id,
+                User.role == UserRole.MANAGER,
+                User.is_active == True,
+                User.notify_new_insights == True,
+            ).all()
+
+            for manager in managers:
+                try:
+                    send_insight_digest_email(
+                        to_email=manager.email,
+                        first_name=manager.first_name,
+                        org_name=org_name,
+                        insight_count=created,
+                        total_estimated_savings=total_savings_val,
+                        dashboard_url=dashboard_url,
+                    )
+                except Exception as mail_err:
+                    logger.warning("Insight email to %s failed: %s", manager.email, mail_err)
+        except Exception as e:
+            logger.warning("Insight email setup failed: %s", e)
+
     # ---- Notification + email alert for anomalies ---------------------------
     try:
         scan = anomaly_scan(readings, db=None)
@@ -354,7 +400,7 @@ def auto_insights(db, organization_id: int | None = None) -> dict:
             ))
             db.commit()
 
-            # Email every active MANAGER in the org
+            # Email every active MANAGER in the org with anomaly alerts enabled
             if organization_id is not None:
                 try:
                     from app.models import Organization, User, UserRole
@@ -369,6 +415,7 @@ def auto_insights(db, organization_id: int | None = None) -> dict:
                         User.organization_id == organization_id,
                         User.role == UserRole.MANAGER,
                         User.is_active == True,
+                        User.notify_anomaly_alerts == True,
                     ).all()
 
                     for manager in managers:

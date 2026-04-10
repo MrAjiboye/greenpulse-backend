@@ -1,8 +1,10 @@
 import secrets
+from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from jose import JWTError, jwt
@@ -231,6 +233,29 @@ def update_profile(
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+class NotificationPrefsUpdate(BaseModel):
+    notify_anomaly_alerts: Optional[bool] = None
+    notify_new_insights: Optional[bool] = None
+    email_digest_freq: Optional[str] = None  # "instant" | "daily" | "weekly" | "off"
+
+
+@router.patch("/notification-preferences")
+def update_notification_prefs(
+    prefs: NotificationPrefsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Persist the user's email notification preferences."""
+    if prefs.notify_anomaly_alerts is not None:
+        current_user.notify_anomaly_alerts = prefs.notify_anomaly_alerts
+    if prefs.notify_new_insights is not None:
+        current_user.notify_new_insights = prefs.notify_new_insights
+    if prefs.email_digest_freq is not None:
+        current_user.email_digest_freq = prefs.email_digest_freq
+    db.commit()
+    return {"status": "updated"}
 
 
 @router.post("/forgot-password")

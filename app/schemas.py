@@ -50,6 +50,9 @@ class UserResponse(BaseModel):
     organization_name: Optional[str] = None
     organization_iot_api_key: Optional[str] = None
     organization_plan: Optional[str] = "free"
+    notify_anomaly_alerts: bool = True
+    notify_new_insights: bool = True
+    email_digest_freq: str = "daily"
     created_at: datetime
 
     @computed_field

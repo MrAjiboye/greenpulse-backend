@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     FROM_EMAIL: str = "no-reply@support.greenpulseanalytics.com"
     FROM_NAME: str = "GreenPulse"
 
+    # n3rgy
+    N3RGY_API_KEY: Optional[str] = None
+
     # Stripe
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""

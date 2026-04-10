@@ -31,6 +31,9 @@ with engine.connect() as conn:
         'ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name TEXT',
         'ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_provider TEXT',
         'ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_sub TEXT',
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_anomaly_alerts BOOLEAN NOT NULL DEFAULT TRUE',
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_new_insights BOOLEAN NOT NULL DEFAULT TRUE',
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_digest_freq TEXT NOT NULL DEFAULT 'daily'",
     ]
     for stmt in missing_col_stmts:
         conn.execute(sa.text(stmt))
@@ -44,6 +47,10 @@ with engine.connect() as conn:
         'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS octopus_mpan TEXT',
         'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS octopus_meter_serial TEXT',
         'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS octopus_last_sync TIMESTAMPTZ',
+        'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS n3rgy_mpan TEXT',
+        'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS n3rgy_mprn TEXT',
+        'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS n3rgy_consent_at TIMESTAMPTZ',
+        'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS n3rgy_last_sync TIMESTAMPTZ',
     ]
     for stmt in org_col_stmts:
         conn.execute(sa.text(stmt))

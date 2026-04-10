@@ -89,6 +89,13 @@ async def _scheduler_loop() -> None:
                     insight_result = auto_insights(db)
                     logger.info("Auto-insights: %s", insight_result)
 
+                    # Daily digest emails at 02:00 window
+                    if is_daily_window:
+                        try:
+                            _send_daily_digests(db)
+                        except Exception as digest_err:
+                            logger.warning("Daily digest emails failed: %s", digest_err)
+
                 else:
                     logger.debug(
                         "No retrain needed — total=%d new_since_last=%d",
@@ -103,6 +110,69 @@ async def _scheduler_loop() -> None:
             break
         except Exception as e:
             logger.error("ML scheduler error: %s", e, exc_info=True)
+
+
+def _send_daily_digests(db) -> None:
+    """Send daily digest emails to all managers who have email_digest_freq='daily'."""
+    from app.models import Organization, User, UserRole, EnergyReading, Insight, InsightStatus
+    from app.email import send_daily_digest_email
+    from app.config import settings
+    from datetime import timedelta, timezone
+    import sqlalchemy as sa
+
+    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+
+    # Get all active managers with daily digest enabled
+    managers = db.query(User).filter(
+        User.role == UserRole.MANAGER,
+        User.is_active == True,
+        User.email_digest_freq == "daily",
+        User.organization_id != None,
+    ).all()
+
+    for manager in managers:
+        try:
+            org_id = manager.organization_id
+            org = db.query(Organization).filter(Organization.id == org_id).first()
+            org_name = org.name if org else "your organisation"
+
+            # 7-day energy total
+            rows = db.query(EnergyReading).filter(
+                EnergyReading.organization_id == org_id,
+                EnergyReading.timestamp >= cutoff_7d,
+            ).all()
+            total_kwh = sum(r.consumption_kwh for r in rows)
+
+            # Pending insights
+            pending = db.query(Insight).filter(
+                Insight.organization_id == org_id,
+                Insight.status == InsightStatus.PENDING,
+            ).all()
+            total_savings = sum(i.estimated_savings or 0 for i in pending)
+
+            # Anomaly count reuses the predictor scan — import lazily
+            from app.ml.predictor import anomaly_scan
+            anomaly_count = 0
+            if rows:
+                try:
+                    scan = anomaly_scan(rows, db=None)
+                    anomaly_count = len([a for a in scan["anomalies"] if a["severity"] == "high"])
+                except Exception:
+                    pass
+
+            send_daily_digest_email(
+                to_email=manager.email,
+                first_name=manager.first_name,
+                org_name=org_name,
+                total_kwh_7d=total_kwh,
+                insight_count=len(pending),
+                anomaly_count=anomaly_count,
+                estimated_monthly_savings=total_savings,
+                dashboard_url=f"{settings.FRONTEND_URL}/dashboard",
+            )
+            logger.info("Daily digest sent to %s", manager.email)
+        except Exception as e:
+            logger.warning("Daily digest to %s failed: %s", manager.email, e)
 
 
 def start_scheduler() -> None:

@@ -20,6 +20,11 @@ class Organization(Base):
     octopus_mpan        = Column(String, nullable=True)
     octopus_meter_serial = Column(String, nullable=True)
     octopus_last_sync   = Column(DateTime(timezone=True), nullable=True)
+    # n3rgy integration
+    n3rgy_mpan          = Column(String, nullable=True)
+    n3rgy_mprn          = Column(String, nullable=True)
+    n3rgy_consent_at    = Column(DateTime(timezone=True), nullable=True)
+    n3rgy_last_sync     = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -70,6 +75,10 @@ class User(Base):
     role = Column(Enum(UserRole), default=UserRole.VIEWER)
     is_active = Column(Boolean, default=True)
     email_verified = Column(Boolean, nullable=False, default=False, server_default="0")
+    # Notification preferences
+    notify_anomaly_alerts  = Column(Boolean, nullable=False, default=True,  server_default="1")
+    notify_new_insights    = Column(Boolean, nullable=False, default=True,  server_default="1")
+    email_digest_freq      = Column(String,  nullable=False, default="daily", server_default="daily")
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
