@@ -9,7 +9,7 @@ fi
 echo "Starting GreenPulse backend..."
 
 # Create all tables from current models (safe on existing DB — won't drop anything)
-python -c "
+python <<'PYEOF'
 from app.database import engine
 from app.models import Base
 import sqlalchemy as sa
@@ -22,7 +22,6 @@ except Exception as e:
 
 # Idempotently add any columns that may have been missing from earlier deployments
 with engine.connect() as conn:
-    # Idempotently add all columns that may be missing from earlier deployments.
     # ADD COLUMN IF NOT EXISTS is a no-op when the column already exists (PostgreSQL 9.6+).
     missing_col_stmts = [
         'ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE',
@@ -38,9 +37,9 @@ with engine.connect() as conn:
     for stmt in missing_col_stmts:
         conn.execute(sa.text(stmt))
 
-    # Org billing + Octopus columns
+    # Org billing + Octopus + n3rgy columns
     org_col_stmts = [
-        \"ALTER TABLE organizations ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free'\",
+        "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free'",
         'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT',
         'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ',
         'ALTER TABLE organizations ADD COLUMN IF NOT EXISTS octopus_api_key TEXT',
@@ -56,10 +55,10 @@ with engine.connect() as conn:
         conn.execute(sa.text(stmt))
 
     conn.commit()
-    print('User column migrations applied.')
+    print('Column migrations applied.')
 
     # goals table
-    conn.execute(sa.text(\"\"\"
+    conn.execute(sa.text("""
         CREATE TABLE IF NOT EXISTS goals (
             id SERIAL PRIMARY KEY,
             organization_id INTEGER REFERENCES organizations(id),
@@ -72,10 +71,10 @@ with engine.connect() as conn:
             created_by INTEGER REFERENCES users(id),
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
-    \"\"\"))
+    """))
 
     # team_invites table
-    conn.execute(sa.text(\"\"\"
+    conn.execute(sa.text("""
         CREATE TABLE IF NOT EXISTS team_invites (
             id SERIAL PRIMARY KEY,
             email TEXT NOT NULL,
@@ -87,11 +86,11 @@ with engine.connect() as conn:
             accepted_at TIMESTAMPTZ,
             expires_at TIMESTAMPTZ NOT NULL
         )
-    \"\"\"))
+    """))
     conn.commit()
 
 print('Database tables created/verified.')
-"
+PYEOF
 
 # Stamp alembic as head so it doesn't try to run the incremental migrations
 # (which were written for SQLite and assume tables already exist)
