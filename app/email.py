@@ -323,6 +323,58 @@ def send_invite_email(to_email: str, token: str, org_name: str, inviter_name: st
     send_email(to_email, subject, html_body, plain_body)
 
 
+def send_new_signup_notification(
+    user_email: str,
+    user_name: str,
+    org_name: str,
+) -> None:
+    """Notify the GreenPulse inbox when a new user registers."""
+    INBOX = "info@greenpulseanalytics.com"
+    subject = f"New signup: {user_name} · {org_name}"
+
+    html_body = f"""
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <tr><td style="background:linear-gradient(135deg,#059669,#10b981);padding:32px 40px;text-align:center;">
+          <span style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">🌿 GreenPulse</span>
+        </td></tr>
+        <tr><td style="background:#f0fdf4;border-bottom:2px solid #bbf7d0;padding:14px 40px;">
+          <p style="margin:0;font-size:13px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:0.5px;">🎉 New account created</p>
+        </td></tr>
+        <tr><td style="padding:40px;">
+          <h2 style="margin:0 0 20px;font-size:20px;font-weight:700;color:#111827;">Someone just signed up</h2>
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+            <tr style="background:#f9fafb;"><td style="padding:12px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;width:130px;">Name</td><td style="padding:12px 16px;font-size:14px;color:#111827;">{user_name}</td></tr>
+            <tr><td style="padding:12px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;border-top:1px solid #e5e7eb;">Email</td><td style="padding:12px 16px;font-size:14px;border-top:1px solid #e5e7eb;"><a href="mailto:{user_email}" style="color:#059669;">{user_email}</a></td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:12px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;border-top:1px solid #e5e7eb;">Organisation</td><td style="padding:12px 16px;font-size:14px;color:#111827;border-top:1px solid #e5e7eb;">{org_name}</td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="background:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;text-align:center;">
+          <p style="margin:0;font-size:12px;color:#9ca3af;">Sent automatically by GreenPulse on signup</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+
+    plain_body = (
+        f"New GreenPulse signup\n\n"
+        f"Name:          {user_name}\n"
+        f"Email:         {user_email}\n"
+        f"Organisation:  {org_name}\n\n"
+        "Sent automatically on registration."
+    )
+
+    send_email(INBOX, subject, html_body, plain_body)
+
+
 def send_insight_digest_email(
     to_email: str,
     first_name: str,

@@ -18,7 +18,7 @@ from app.auth import (
     get_current_active_user,
 )
 from app.config import settings
-from app.email import send_verification_email
+from app.email import send_verification_email, send_new_signup_notification
 from app.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -85,6 +85,12 @@ def register(
     # Send verification email in the background
     token = _make_verify_token(new_user.email)
     background_tasks.add_task(send_verification_email, new_user.email, token, first)
+
+    # Notify GreenPulse inbox of the new signup
+    full_name = f"{first} {last}".strip()
+    background_tasks.add_task(
+        send_new_signup_notification, new_user.email, full_name, org.name
+    )
 
     return {"message": "Verification email sent", "email": new_user.email}
 
