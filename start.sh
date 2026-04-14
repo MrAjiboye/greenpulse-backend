@@ -96,5 +96,13 @@ PYEOF
 # (which were written for SQLite and assume tables already exist)
 alembic stamp head
 
+# Refresh demo data if REFRESH_DEMO=1 is set in Railway environment variables.
+# Set it to 1, deploy, data refreshes. Safe to leave set — script is idempotent.
+if [ "$REFRESH_DEMO" = "1" ]; then
+    echo "REFRESH_DEMO=1 detected — refreshing demo data..."
+    python refresh_demo_data.py
+    echo "Demo data refresh complete."
+fi
+
 echo "Starting uvicorn on port $PORT..."
 exec uvicorn app.main:app --host 0.0.0.0 --port $PORT
