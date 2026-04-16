@@ -100,8 +100,8 @@ alembic stamp head
 # Set it to 1, deploy, data refreshes. Safe to leave set — script is idempotent.
 if [ "$REFRESH_DEMO" = "1" ]; then
     echo "REFRESH_DEMO=1 detected — refreshing demo data..."
-    python refresh_demo_data.py
-    echo "Demo data refresh complete."
+    python refresh_demo_data.py || echo "Warning: demo refresh failed — continuing startup anyway."
+    echo "Demo data refresh step done."
 fi
 
 echo "Starting uvicorn on port $PORT..."

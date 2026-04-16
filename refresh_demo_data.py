@@ -248,30 +248,33 @@ def run():
         print(f"  Created {len(notifications)} notifications")
 
         # ── 6. Goals ─────────────────────────────────────────────────────────
+        demo_user = db.query(User).filter(User.email == "demo@thegreenplate.co.uk").first()
+        manager_id = demo_user.id if demo_user else None
+        year = now.year
         goals = [
             dict(
                 name="Reduce total energy 15% by Q3",
                 category=GoalCategory.ENERGY,
                 target_value=15.0, unit="%",
-                period_start=now.replace(month=4, day=1, hour=0, minute=0, second=0),
-                period_end=now.replace(month=9, day=30, hour=23, minute=59, second=59),
-                created_by=db.query(User).filter(User.email == "demo@thegreenplate.co.uk").first().id,
+                period_start=datetime(year, 4, 1, 0, 0, 0),
+                period_end=datetime(year, 9, 30, 23, 59, 59),
+                created_by=manager_id,
             ),
             dict(
                 name="Cut landfill waste to under 25%",
                 category=GoalCategory.WASTE,
                 target_value=25.0, unit="%",
-                period_start=now.replace(month=1, day=1, hour=0, minute=0, second=0),
-                period_end=now.replace(month=12, day=31, hour=23, minute=59, second=59),
-                created_by=db.query(User).filter(User.email == "demo@thegreenplate.co.uk").first().id,
+                period_start=datetime(year, 1, 1, 0, 0, 0),
+                period_end=datetime(year, 12, 31, 23, 59, 59),
+                created_by=manager_id,
             ),
             dict(
                 name="Reduce carbon footprint by 20%",
                 category=GoalCategory.CARBON,
                 target_value=20.0, unit="%",
-                period_start=now.replace(month=1, day=1, hour=0, minute=0, second=0),
-                period_end=now.replace(month=12, day=31, hour=23, minute=59, second=59),
-                created_by=db.query(User).filter(User.email == "demo@thegreenplate.co.uk").first().id,
+                period_start=datetime(year, 1, 1, 0, 0, 0),
+                period_end=datetime(year, 12, 31, 23, 59, 59),
+                created_by=manager_id,
             ),
         ]
         for data in goals:
