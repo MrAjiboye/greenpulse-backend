@@ -20,7 +20,7 @@ from app.database import SessionLocal
 from app.models import (
     Organization, User,
     EnergyReading, WasteLog,
-    Insight, InsightCategory, InsightStatus,
+    Insight, InsightCategory, InsightStatus, InsightAction,
     Notification, NotificationType,
     Goal, GoalCategory,
 )
@@ -66,7 +66,14 @@ def run():
 
         print(f"Refreshing data for: {org.name} (id={org.id})")
 
-        # ── 1. Clear existing data ────────────────────────────────────────────
+        # ── 1. Clear existing data (order matters — delete children first) ───
+        # Delete insight_actions that belong to this org's insights
+        org_insight_ids = [
+            r.id for r in db.query(Insight.id).filter(Insight.organization_id == org.id).all()
+        ]
+        if org_insight_ids:
+            db.query(InsightAction).filter(InsightAction.insight_id.in_(org_insight_ids)).delete(synchronize_session=False)
+
         deleted_e = db.query(EnergyReading).filter(EnergyReading.organization_id == org.id).delete()
         deleted_w = db.query(WasteLog).filter(WasteLog.organization_id == org.id).delete()
         deleted_i = db.query(Insight).filter(Insight.organization_id == org.id).delete()
