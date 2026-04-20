@@ -37,11 +37,14 @@ AdminOnly = Depends(require_role(UserRole.ADMIN))
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/status")
-def get_ml_status(_: User = AdminOnly):
+def get_ml_status(
+    organization_id: int | None = Query(default=None, description="Return status for a specific org's model."),
+    _: User = AdminOnly,
+):
     """Full model metadata — admin only."""
-    bundle = load_bundle()
+    bundle = load_bundle(organization_id)
     if bundle is None:
-        return {"trained": False, "min_samples_required": MIN_SAMPLES}
+        return {"trained": False, "min_samples_required": MIN_SAMPLES, "organization_id": organization_id}
     return {
         "trained":          True,
         "version":          bundle.get("version", 1),
@@ -80,7 +83,7 @@ def train_model(
             detail=f"Need at least {MIN_SAMPLES} readings (have {len(all_readings)}).",
         )
     try:
-        return train(all_readings)
+        return train(all_readings, org_id=organization_id)
     except Exception as e:
         logger.error("Training failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -103,7 +106,7 @@ def train_and_generate_insights(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Need at least {MIN_SAMPLES} readings (have {len(all_readings)}).",
         )
-    train_result   = train(all_readings)
+    train_result   = train(all_readings, org_id=organization_id)
     insight_result = auto_insights(db, organization_id=organization_id)
     return {**train_result, "insights": insight_result}
 
@@ -125,7 +128,7 @@ def get_anomalies(
     if not readings:
         return {"anomalies": [], "total_checked": 0, "anomaly_count": 0, "anomaly_rate_pct": 0.0}
     try:
-        return anomaly_scan(readings, db=db)
+        return anomaly_scan(readings, db=db, org_id=organization_id)
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -144,7 +147,7 @@ def get_forecast(
         q = q.filter(EnergyReading.organization_id == organization_id)
     last_readings = q.limit(336).all()
     try:
-        return forecast(horizon_hours=hours, last_readings=last_readings)
+        return forecast(horizon_hours=hours, last_readings=last_readings, org_id=organization_id)
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -173,7 +176,7 @@ def get_cloud_status(_: User = AdminOnly):
 @public_router.get("/status")
 def public_ml_status(current_user: User = Depends(get_current_active_user)):
     """Lightweight model status — for the user dashboard."""
-    bundle = load_bundle()
+    bundle = load_bundle(current_user.organization_id)
     if bundle is None:
         return {"trained": False}
     return {
@@ -198,7 +201,7 @@ def public_forecast(
         .all()
     )
     try:
-        return forecast(horizon_hours=hours, last_readings=last_readings)
+        return forecast(horizon_hours=hours, last_readings=last_readings, org_id=current_user.organization_id)
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -250,7 +253,7 @@ def public_zone_health(
     if not readings:
         return {"zones": []}
     try:
-        return zone_health_scores(readings)
+        return zone_health_scores(readings, org_id=current_user.organization_id)
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -266,6 +269,6 @@ def public_recent_anomalies(
     if not readings:
         return {"anomaly_count": 0, "total_checked": 0, "anomalies": []}
     try:
-        return anomaly_scan(readings, db=None)
+        return anomaly_scan(readings, db=None, org_id=current_user.organization_id)
     except RuntimeError:
         return {"anomaly_count": 0, "total_checked": len(readings), "anomalies": []}

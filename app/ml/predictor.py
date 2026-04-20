@@ -27,7 +27,7 @@ logger = logging.getLogger("greenpulse.ml.predictor")
 SEVERITY_THRESHOLDS = {"high": -0.15, "medium": -0.05}
 
 
-def anomaly_scan(readings, db=None) -> dict:
+def anomaly_scan(readings, db=None, org_id: int | None = None) -> dict:
     """
     Run anomaly detection on a list of EnergyReading ORM objects.
 
@@ -49,9 +49,12 @@ def anomaly_scan(readings, db=None) -> dict:
     not the original readings list, to keep predictions and source data aligned.
     A (timestamp, zone) lookup dict maps back to the original reading for its .id.
     """
-    bundle = load_bundle()
+    bundle = load_bundle(org_id)
     if bundle is None:
-        raise RuntimeError("No model trained. Train the model first.")
+        raise RuntimeError(
+            f"No model trained for org {org_id}. Train the model first."
+            if org_id else "No model trained. Train the model first."
+        )
 
     prep = bundle["prep"]
     iso  = bundle["iso"]
@@ -115,7 +118,7 @@ def anomaly_scan(readings, db=None) -> dict:
     }
 
 
-def forecast(horizon_hours: int = 168, last_readings=None) -> dict:
+def forecast(horizon_hours: int = 168, last_readings=None, org_id: int | None = None) -> dict:
     """
     Generate an N-hour energy forecast using the ensemble model.
 
@@ -132,9 +135,12 @@ def forecast(horizon_hours: int = 168, last_readings=None) -> dict:
       model: "ensemble" | "gbr" | "lr",
     }
     """
-    bundle = load_bundle()
+    bundle = load_bundle(org_id)
     if bundle is None:
-        raise RuntimeError("No model trained. Train the model first.")
+        raise RuntimeError(
+            f"No model trained for org {org_id}. Train the model first."
+            if org_id else "No model trained. Train the model first."
+        )
 
     prep  = bundle["prep"]
     gbr   = bundle["gbr"]
@@ -208,9 +214,9 @@ def auto_insights(db, organization_id: int | None = None) -> dict:
     )
     from app.database import naive_utc
 
-    bundle = load_bundle()
+    bundle = load_bundle(organization_id)
     if bundle is None:
-        return {"created": 0, "skipped": "model not trained"}
+        return {"created": 0, "skipped": "model not trained for this organisation"}
 
     cutoff_7d  = naive_utc(datetime.now(timezone.utc) - timedelta(days=7))
     cutoff_24h = naive_utc(datetime.now(timezone.utc) - timedelta(hours=24))
@@ -540,7 +546,7 @@ def ghost_load_analysis(readings, electricity_rate: float = 0.28) -> dict:
     }
 
 
-def zone_health_scores(readings) -> dict:
+def zone_health_scores(readings, org_id: int | None = None) -> dict:
     """
     Score each zone 0–100 for consumption health based on three signals:
       A (40 pts) — anomaly rate via the trained IsolationForest
@@ -549,9 +555,12 @@ def zone_health_scores(readings) -> dict:
 
     Requires a trained model bundle. Raises RuntimeError if none exists.
     """
-    bundle = load_bundle()
+    bundle = load_bundle(org_id)
     if bundle is None:
-        raise RuntimeError("No model trained. Train the model first.")
+        raise RuntimeError(
+            f"No model trained for org {org_id}. Train the model first."
+            if org_id else "No model trained. Train the model first."
+        )
 
     prep = bundle["prep"]
     iso  = bundle["iso"]

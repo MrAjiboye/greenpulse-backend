@@ -29,29 +29,38 @@ from app.ml.pipeline import EnergyPreprocessor
 
 logger = logging.getLogger("greenpulse.ml.trainer")
 
-MODEL_PATH = Path(__file__).parent.parent / "ml_models.pkl"
+MODEL_DIR = Path(__file__).parent.parent / "ml_models"
 MIN_SAMPLES = 10
+
+
+def _model_path(org_id: int | None = None) -> Path:
+    MODEL_DIR.mkdir(exist_ok=True)
+    if org_id is not None:
+        return MODEL_DIR / f"org_{org_id}.pkl"
+    return MODEL_DIR / "global.pkl"
 
 # Overfitting alert: if train MAE is less than this fraction of val MAE, warn
 OVERFIT_TRAIN_VAL_RATIO = 0.5
 
 
-def load_bundle() -> dict | None:
-    """Return the saved model bundle or None."""
-    if not MODEL_PATH.exists():
+def load_bundle(org_id: int | None = None) -> dict | None:
+    """Return the saved model bundle for an org, or None if not trained yet."""
+    path = _model_path(org_id)
+    if not path.exists():
         return None
     try:
-        with open(MODEL_PATH, "rb") as f:
+        with open(path, "rb") as f:
             return pickle.load(f)
     except Exception as e:
-        logger.warning("Could not load model bundle: %s", e)
+        logger.warning("Could not load model bundle (org=%s): %s", org_id, e)
         return None
 
 
-def save_bundle(bundle: dict) -> None:
-    with open(MODEL_PATH, "wb") as f:
+def save_bundle(bundle: dict, org_id: int | None = None) -> None:
+    path = _model_path(org_id)
+    with open(path, "wb") as f:
         pickle.dump(bundle, f)
-    logger.info("Model bundle saved -> %s", MODEL_PATH)
+    logger.info("Model bundle saved -> %s", path)
 
 
 def _adaptive_gbr_params(n_samples: int) -> dict:
@@ -75,7 +84,7 @@ def _adaptive_gbr_params(n_samples: int) -> dict:
         return dict(n_estimators=300, max_depth=5, min_samples_leaf=3,  learning_rate=0.05, subsample=0.8)
 
 
-def train(readings) -> dict:
+def train(readings, org_id: int | None = None) -> dict:
     """
     Full training pipeline.
 
@@ -241,7 +250,7 @@ def train(readings) -> dict:
         "data_quality": quality,
     }
 
-    save_bundle(bundle)
+    save_bundle(bundle, org_id)
 
     logger.info(
         "Training complete -- %d samples (%d clean) | GBR val_MAE=%.3f | LR val_MAE=%.3f",

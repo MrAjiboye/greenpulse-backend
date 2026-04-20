@@ -20,18 +20,19 @@ from datetime import datetime, timezone
 logger = logging.getLogger("greenpulse.ml.scheduler")
 
 _task: asyncio.Task | None = None
-_last_daily_retrain_date = None  # tracks date of last daily-window retrain
+_last_daily_retrain_date = None       # tracks date of last daily-window retrain
+_last_training_total_readings = 0     # tracks total readings count at last train
 
 
 async def _scheduler_loop() -> None:
     """Main async loop -- checks every 30 minutes."""
-    global _last_daily_retrain_date
+    global _last_daily_retrain_date, _last_training_total_readings
 
     from app.config import settings
     from app.database import SessionLocal
-    from app.ml.trainer import load_bundle, train
+    from app.ml.trainer import train, MIN_SAMPLES
     from app.ml.predictor import auto_insights
-    from app.models import EnergyReading
+    from app.models import EnergyReading, Organization
 
     interval_seconds = 30 * 60  # 30-minute check cadence
     retrain_threshold: int = getattr(settings, "ML_RETRAIN_EVERY_N_READINGS", 100)
@@ -54,10 +55,7 @@ async def _scheduler_loop() -> None:
             db = SessionLocal()
             try:
                 total_readings = db.query(EnergyReading).count()
-                bundle = load_bundle()
-
-                n_at_last_train = bundle["n_samples"] if bundle else 0
-                new_since_train = total_readings - n_at_last_train
+                new_since_train = total_readings - _last_training_total_readings
 
                 now_utc = datetime.now(timezone.utc)
                 today   = now_utc.date()
@@ -74,23 +72,35 @@ async def _scheduler_loop() -> None:
                     or is_daily_window
                 )
 
-                if should_retrain and total_readings >= 10:
+                if should_retrain and total_readings >= MIN_SAMPLES:
                     logger.info(
-                        "Retraining triggered — total=%d new_since_last=%d daily_window=%s",
+                        "Per-org retrain triggered — total=%d new_since_last=%d daily_window=%s",
                         total_readings, new_since_train, is_daily_window,
                     )
-                    all_readings = db.query(EnergyReading).order_by(EnergyReading.timestamp).all()
-                    result = train(all_readings)
-                    logger.info("Auto-retrain complete: %s", result)
+
+                    # Train a separate model for each organisation that has enough data
+                    orgs = db.query(Organization).all()
+                    for org in orgs:
+                        org_readings = (
+                            db.query(EnergyReading)
+                            .filter(EnergyReading.organization_id == org.id)
+                            .order_by(EnergyReading.timestamp)
+                            .all()
+                        )
+                        if len(org_readings) < MIN_SAMPLES:
+                            logger.debug("Skipping org %d — only %d readings", org.id, len(org_readings))
+                            continue
+                        try:
+                            result = train(org_readings, org_id=org.id)
+                            logger.info("Org %d retrain complete: %s", org.id, result.get("status"))
+                            insight_result = auto_insights(db, organization_id=org.id)
+                            logger.info("Org %d auto-insights: %s", org.id, insight_result)
+                        except Exception as org_err:
+                            logger.error("Org %d training failed: %s", org.id, org_err)
+
+                    _last_training_total_readings = total_readings
                     if is_daily_window:
                         _last_daily_retrain_date = today
-
-                    # Generate fresh insights after retrain
-                    insight_result = auto_insights(db)
-                    logger.info("Auto-insights: %s", insight_result)
-
-                    # Daily digest emails at 02:00 window
-                    if is_daily_window:
                         try:
                             _send_daily_digests(db)
                         except Exception as digest_err:
