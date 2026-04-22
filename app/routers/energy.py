@@ -130,27 +130,39 @@ def get_energy_anomalies(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Detect energy consumption anomalies using per-zone statistics."""
+    """Detect energy anomalies using per-zone stats over a 30-day baseline."""
     from collections import defaultdict
 
-    recent = _org_q(
-        db.query(EnergyReading).order_by(EnergyReading.timestamp.desc()).limit(200),
+    now = datetime.now(timezone.utc)
+
+    # 30-day window for a solid per-zone baseline
+    baseline_cutoff = naive_utc(now - timedelta(days=30))
+    # Only surface anomalies from the last 7 days
+    recent_cutoff   = naive_utc(now - timedelta(days=7))
+
+    all_readings = _org_q(
+        db.query(EnergyReading).filter(EnergyReading.timestamp >= baseline_cutoff),
         current_user, EnergyReading
     ).all()
 
-    if not recent:
+    if not all_readings:
         return {"anomalies": []}
 
-    # Group by zone so high-consumption zones don't dilute low-consumption ones
+    # Build per-zone baseline from full 30-day window
     zone_readings: dict[str, list] = defaultdict(list)
-    for r in recent:
+    for r in all_readings:
         zone_readings[r.zone or "Unknown"].append(r)
 
     anomalies = []
     for zone, readings in zone_readings.items():
         avg = sum(r.consumption_kwh for r in readings) / len(readings)
-        threshold = avg * 1.5  # 50% above that zone's own average
+        threshold = avg * 1.5  # 50% above that zone's own baseline
+
+        # Only report spikes from the last 7 days
         for r in readings:
+            ts = r.timestamp if r.timestamp.tzinfo else r.timestamp.replace(tzinfo=timezone.utc)
+            if ts < (now - timedelta(days=7)):
+                continue
             if r.consumption_kwh > threshold:
                 pct_above = round((r.consumption_kwh / avg - 1) * 100)
                 anomalies.append({
@@ -164,7 +176,7 @@ def get_energy_anomalies(
                     "details":         f"{r.consumption_kwh:.1f} kWh — {pct_above}% above {zone} average ({avg:.1f} kWh)",
                 })
 
-    # Highest severity first, then most recent
+    # High severity first, then most recent
     anomalies.sort(key=lambda a: (0 if a["severity"] == "high" else 1, a["timestamp"]), reverse=False)
     return {"anomalies": anomalies[:10]}
 
