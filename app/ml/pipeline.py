@@ -162,24 +162,48 @@ class EnergyPreprocessor:
         df = self._engineer(df)
 
         if last_df is not None and len(last_df):
-            last_vals = last_df["consumption_kwh"].values
+            # Aggregate zones by hour so lag lookups represent total site consumption
+            if "timestamp" in last_df.columns:
+                hist = (
+                    last_df.groupby("timestamp")["consumption_kwh"]
+                    .sum()
+                    .sort_index()
+                )
+            else:
+                hist = pd.Series(dtype=float)
+
+            last_vals = hist.values if len(hist) else last_df["consumption_kwh"].values
+            mean_val  = float(last_vals.mean()) if len(last_vals) else 0.0
 
             def _last(n: int) -> float:
-                return float(last_vals[-n]) if len(last_vals) >= n else float(last_vals.mean())
+                return float(last_vals[-n]) if len(last_vals) >= n else mean_val
+
+            def _per_row_lag(lag_hours: int) -> list:
+                """Look up historical value at (future_ts - lag_hours) for each future row."""
+                out = []
+                for ts in times:
+                    target = ts - pd.Timedelta(hours=lag_hours)
+                    if target in hist.index:
+                        out.append(float(hist[target]))
+                    else:
+                        # fall back to same-hour average from history
+                        same_hour = hist[hist.index.hour == ts.hour]
+                        out.append(float(same_hour.mean()) if len(same_hour) else mean_val)
+                return out
 
             df["lag_1h"]   = _last(1)
             df["lag_2h"]   = _last(2)
             df["lag_6h"]   = _last(6)
-            df["lag_24h"]  = _last(24)
-            df["lag_168h"] = _last(168)
+            df["lag_24h"]  = _per_row_lag(24)
+            df["lag_168h"] = _per_row_lag(168)
 
             df["rolling_mean_1h"]  = float(last_vals[-1:].mean())
             df["rolling_std_1h"]   = 0.0
-            df["rolling_mean_6h"]  = float(last_vals[-6:].mean()) if len(last_vals) >= 6 else float(last_vals.mean())
-            df["rolling_mean_24h"] = float(last_vals[-24:].mean()) if len(last_vals) >= 24 else float(last_vals.mean())
+            df["rolling_mean_6h"]  = float(last_vals[-6:].mean()) if len(last_vals) >= 6 else mean_val
+            df["rolling_mean_24h"] = float(last_vals[-24:].mean()) if len(last_vals) >= 24 else mean_val
             df["rolling_std_24h"]  = float(last_vals[-24:].std()) if len(last_vals) >= 24 else 0.0
             df["rolling_max_24h"]  = float(last_vals[-24:].max()) if len(last_vals) >= 24 else float(last_vals.max())
-            df["rolling_mean_7d"]  = float(last_vals[-168:].mean()) if len(last_vals) >= 168 else float(last_vals.mean())
+            df["rolling_mean_7d"]  = float(last_vals[-168:].mean()) if len(last_vals) >= 168 else mean_val
 
         return df
 
