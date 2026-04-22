@@ -162,48 +162,44 @@ class EnergyPreprocessor:
         df = self._engineer(df)
 
         if last_df is not None and len(last_df):
-            # Aggregate zones by hour so lag lookups represent total site consumption
+            # Use per-zone mean per hour so values stay on training scale
             if "timestamp" in last_df.columns:
-                hist = (
-                    last_df.groupby("timestamp")["consumption_kwh"]
+                hourly = (
+                    last_df.groupby(last_df["timestamp"].dt.floor("h"))["consumption_kwh"]
                     .mean()
                     .sort_index()
                 )
+                last_vals = hourly.values
             else:
-                hist = pd.Series(dtype=float)
+                last_vals = last_df["consumption_kwh"].values
 
-            last_vals = hist.values if len(hist) else last_df["consumption_kwh"].values
-            mean_val  = float(last_vals.mean()) if len(last_vals) else 0.0
+            n        = len(last_vals)
+            mean_val = float(last_vals.mean()) if n else 0.0
 
-            def _last(n: int) -> float:
-                return float(last_vals[-n]) if len(last_vals) >= n else mean_val
+            def _last(k: int) -> float:
+                return float(last_vals[-k]) if n >= k else mean_val
 
-            def _per_row_lag(lag_hours: int) -> list:
-                """Look up historical value at (future_ts - lag_hours) for each future row."""
-                out = []
-                for ts in times:
-                    target = ts - pd.Timedelta(hours=lag_hours)
-                    if target in hist.index:
-                        out.append(float(hist[target]))
-                    else:
-                        # fall back to same-hour average from history
-                        same_hour = hist[hist.index.hour == ts.hour]
-                        out.append(float(same_hour.mean()) if len(same_hour) else mean_val)
-                return out
+            # Slide the historical window forward for each future hour
+            # lag_24h[i] = the value that was 24h before future hour i
+            def _sliding_lag(lag: int) -> list:
+                return [
+                    float(last_vals[n - lag + i]) if 0 <= n - lag + i < n else mean_val
+                    for i in range(horizon_hours)
+                ]
 
             df["lag_1h"]   = _last(1)
             df["lag_2h"]   = _last(2)
             df["lag_6h"]   = _last(6)
-            df["lag_24h"]  = _per_row_lag(24)
-            df["lag_168h"] = _per_row_lag(168)
+            df["lag_24h"]  = _sliding_lag(24)
+            df["lag_168h"] = _sliding_lag(168)
 
             df["rolling_mean_1h"]  = float(last_vals[-1:].mean())
             df["rolling_std_1h"]   = 0.0
-            df["rolling_mean_6h"]  = float(last_vals[-6:].mean()) if len(last_vals) >= 6 else mean_val
-            df["rolling_mean_24h"] = float(last_vals[-24:].mean()) if len(last_vals) >= 24 else mean_val
-            df["rolling_std_24h"]  = float(last_vals[-24:].std()) if len(last_vals) >= 24 else 0.0
-            df["rolling_max_24h"]  = float(last_vals[-24:].max()) if len(last_vals) >= 24 else float(last_vals.max())
-            df["rolling_mean_7d"]  = float(last_vals[-168:].mean()) if len(last_vals) >= 168 else mean_val
+            df["rolling_mean_6h"]  = float(last_vals[-6:].mean()) if n >= 6   else mean_val
+            df["rolling_mean_24h"] = float(last_vals[-24:].mean()) if n >= 24  else mean_val
+            df["rolling_std_24h"]  = float(last_vals[-24:].std())  if n >= 24  else 0.0
+            df["rolling_max_24h"]  = float(last_vals[-24:].max())  if n >= 24  else float(last_vals.max())
+            df["rolling_mean_7d"]  = float(last_vals[-168:].mean()) if n >= 168 else mean_val
 
         return df
 
