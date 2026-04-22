@@ -130,32 +130,42 @@ def get_energy_anomalies(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Detect energy consumption anomalies"""
+    """Detect energy consumption anomalies using per-zone statistics."""
+    from collections import defaultdict
+
     recent = _org_q(
-        db.query(EnergyReading).order_by(EnergyReading.timestamp.desc()).limit(100),
+        db.query(EnergyReading).order_by(EnergyReading.timestamp.desc()).limit(200),
         current_user, EnergyReading
     ).all()
 
     if not recent:
         return {"anomalies": []}
 
-    avg_consumption = sum(r.consumption_kwh for r in recent) / len(recent)
-    threshold = avg_consumption * 1.2  # 20% above average
+    # Group by zone so high-consumption zones don't dilute low-consumption ones
+    zone_readings: dict[str, list] = defaultdict(list)
+    for r in recent:
+        zone_readings[r.zone or "Unknown"].append(r)
 
-    anomalies = [
-        {
-            "id": r.id,
-            "timestamp": r.timestamp.isoformat(),
-            "consumption_kwh": r.consumption_kwh,
-            "zone": r.zone,
-            "severity": "high" if r.consumption_kwh > threshold * 1.1 else "medium",
-            "title": f"High consumption in {r.zone}",
-            "details": f"{r.consumption_kwh:.1f} kWh — {round((r.consumption_kwh / avg_consumption - 1) * 100)}% above average",
-        }
-        for r in recent
-        if r.consumption_kwh > threshold
-    ]
+    anomalies = []
+    for zone, readings in zone_readings.items():
+        avg = sum(r.consumption_kwh for r in readings) / len(readings)
+        threshold = avg * 1.5  # 50% above that zone's own average
+        for r in readings:
+            if r.consumption_kwh > threshold:
+                pct_above = round((r.consumption_kwh / avg - 1) * 100)
+                anomalies.append({
+                    "id":              r.id,
+                    "timestamp":       r.timestamp.isoformat(),
+                    "detected_at":     r.timestamp.isoformat(),
+                    "consumption_kwh": r.consumption_kwh,
+                    "zone":            r.zone,
+                    "severity":        "high" if r.consumption_kwh > avg * 2.0 else "medium",
+                    "title":           f"High consumption in {r.zone}",
+                    "details":         f"{r.consumption_kwh:.1f} kWh — {pct_above}% above {zone} average ({avg:.1f} kWh)",
+                })
 
+    # Highest severity first, then most recent
+    anomalies.sort(key=lambda a: (0 if a["severity"] == "high" else 1, a["timestamp"]), reverse=False)
     return {"anomalies": anomalies[:10]}
 
 @router.get("/zones")
