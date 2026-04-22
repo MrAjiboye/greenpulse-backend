@@ -166,7 +166,7 @@ class EnergyPreprocessor:
             if "timestamp" in last_df.columns:
                 hist = (
                     last_df.groupby("timestamp")["consumption_kwh"]
-                    .sum()
+                    .mean()
                     .sort_index()
                 )
             else:
