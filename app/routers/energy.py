@@ -201,18 +201,18 @@ def get_zone_status(
 
 
 def _period_bounds(period: str, now: datetime):
-    """Return (start, end, label) naive-UTC datetimes for a named period."""
+    """Return (start, end, label) datetimes compatible with the active DB engine."""
     y, m = now.year, now.month
     if period == "this_month":
-        start = datetime(y, m, 1)
+        start = datetime(y, m, 1, tzinfo=timezone.utc)
         end   = now
         label = now.strftime("%b %Y")
     elif period == "last_month":
         pm = m - 1 or 12
         py = y if m > 1 else y - 1
         _, last_day = calendar.monthrange(py, pm)
-        start = datetime(py, pm, 1)
-        end   = datetime(py, pm, last_day, 23, 59, 59)
+        start = datetime(py, pm, 1, tzinfo=timezone.utc)
+        end   = datetime(py, pm, last_day, 23, 59, 59, tzinfo=timezone.utc)
         label = datetime(py, pm, 1).strftime("%b %Y")
     elif period == "last_7d":
         start = now - timedelta(days=7)
@@ -224,6 +224,7 @@ def _period_bounds(period: str, now: datetime):
         label = "Last 30 days"
     else:
         raise HTTPException(400, f"Unknown period '{period}'. Use: this_month, last_month, last_7d, last_30d")
+    # naive_utc strips tzinfo on SQLite, leaves aware on PostgreSQL
     return naive_utc(start), naive_utc(end), label
 
 
